@@ -17,14 +17,27 @@ const PROP_BUNDLE_PREFIX = 'T11_BUNDLE_';
 const TRIGGER_HANDLER = 'publishMenuSpikeFromTrigger';
 const CHUNK_SIZE = 2500;
 
+// ---------------------------------------------------------------- 守り
+
+// Web アプリから呼ばれたら止める（active が空、または active と effective が違う）。
+// スプレッドシートの持ち主との照合は入れない。編集者の操作を検証に使うため。
+// 止めたときは、ログのタブにも書かない。
+function assertOwnerRun_() {
+  const active = Session.getActiveUser().getEmail();
+  const effective = Session.getEffectiveUser().getEmail();
+  if (!active || active !== effective) {
+    throw new Error('この操作はメニューからだけ動かせる（守りで止めた）');
+  }
+}
+
 // ---------------------------------------------------------------- メニュー
 
 function onOpen() {
   const ui = SpreadsheetApp.getUi();
   ui.createMenu('T1-1 検証（コード ' + SPIKE_CODE_LABEL + '）')
-    .addItem('1. 取得を試す（固定の URL 2 つ）', 'menuFetchTest')
-    .addItem('2. アプリを更新（段階 1〜4）', 'menuUpdate')
-    .addItem('2. アプリを更新（段階 1〜5）', 'menuUpdateWithStage5')
+    .addItem('取得を試す（固定の URL 2 つ）', 'menuFetchTest')
+    .addItem('アプリを更新（段階 1〜4）', 'menuUpdate')
+    .addItem('アプリを更新（段階 1〜5）', 'menuUpdateWithStage5')
     .addSeparator()
     .addSubMenu(
       ui
@@ -46,6 +59,7 @@ function onOpen() {
 }
 
 function menuFetchTest() {
+  assertOwnerRun_();
   runOp_('取得を試す', function () {
     return Object.keys(BUNDLE_URLS)
       .map(function (key) {
@@ -56,34 +70,42 @@ function menuFetchTest() {
 }
 
 function menuUpdate() {
+  assertOwnerRun_();
   runOp_('アプリを更新（段階 1〜4）', function () {
     return runUpdate_(false);
   });
 }
 
 function menuUpdateWithStage5() {
+  assertOwnerRun_();
   runOp_('アプリを更新（段階 1〜5）', function () {
     return runUpdate_(true);
   });
 }
 
 function menuStopAfter1() {
+  assertOwnerRun_();
   setStop_('1');
 }
 function menuStopAfter2() {
+  assertOwnerRun_();
   setStop_('2');
 }
 function menuStopAfter3() {
+  assertOwnerRun_();
   setStop_('3');
 }
 function menuStopAfter4() {
+  assertOwnerRun_();
   setStop_('4');
 }
 function menuStopNone() {
+  assertOwnerRun_();
   setStop_('');
 }
 
 function menuToggleUrl() {
+  assertOwnerRun_();
   runOp_('取得先を切り替える', function () {
     const props = PropertiesService.getScriptProperties();
     const next = currentUrlKey_() === 'spike' ? 'latest' : 'spike';
@@ -93,12 +115,14 @@ function menuToggleUrl() {
 }
 
 function menuPublish() {
+  assertOwnerRun_();
   runOp_('メニューの公開の代わり（押し直し）', function () {
-    return publishMenuSpike('メニューから押し直し');
+    return publishMenuSpike_('メニューから押し直し');
   });
 }
 
 function menuInitialDeploy() {
+  assertOwnerRun_();
   runOp_('初期の Web アプリを作る', function () {
     const sid = ScriptApp.getScriptId();
     const web = findWebDeployment_(listDeployments_());
@@ -121,6 +145,7 @@ function menuInitialDeploy() {
 }
 
 function menuRollback() {
+  assertOwnerRun_();
   runOp_('前のバージョンに戻す', function () {
     const sid = ScriptApp.getScriptId();
     const state = loadState_();
@@ -164,6 +189,7 @@ function menuRollback() {
 }
 
 function menuStatus() {
+  assertOwnerRun_();
   runOp_('状態を見る', function () {
     const sid = ScriptApp.getScriptId();
     const props = PropertiesService.getScriptProperties();
@@ -198,10 +224,12 @@ function menuStatus() {
 }
 
 function menuClear() {
+  assertOwnerRun_();
   runOp_('記録を消す', function () {
     const props = PropertiesService.getScriptProperties();
     props.deleteProperty(PROP_STATE);
     props.deleteProperty(PROP_STOP);
+    props.deleteProperty(PROP_URL_KEY);
     clearBundle_();
     let removed = 0;
     ScriptApp.getProjectTriggers().forEach(function (t) {
@@ -210,7 +238,11 @@ function menuClear() {
         removed++;
       }
     });
-    return '段階の記録、止める設定、取得したバンドルを消した。トリガー ' + removed + ' 件を消した';
+    return (
+      '段階の記録、止める設定、取得先、取得したバンドルを消した。トリガー ' +
+      removed +
+      ' 件を消した'
+    );
   });
 }
 
@@ -218,6 +250,11 @@ function menuClear() {
 
 // 「T1-1 公開データ」タブに、動いたコードと日時と呼ばれ方を書く
 function publishMenuSpike(source) {
+  assertOwnerRun_();
+  return publishMenuSpike_(source);
+}
+
+function publishMenuSpike_(source) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   let sh = ss.getSheetByName(SHEET_PUBLISH);
   if (!sh) {
@@ -229,8 +266,25 @@ function publishMenuSpike(source) {
 }
 
 // 1回だけの時間主導のトリガーから呼ぶ
-function publishMenuSpikeFromTrigger() {
-  const detail = publishMenuSpike('時間主導のトリガー');
+// 入口の守りの代わりに、イベントの triggerUid がこのスクリプトのトリガーの ID と一致するときだけ動かす
+function publishMenuSpikeFromTrigger(e) {
+  const uid = e && e.triggerUid ? String(e.triggerUid) : '';
+  const ids = ScriptApp.getProjectTriggers().map(function (t) {
+    return String(t.getUniqueId());
+  });
+  const matched = !!uid && ids.indexOf(uid) >= 0;
+  log_(
+    'メニューの公開の代わり（トリガー）の確認',
+    matched ? 'OK' : 'NG',
+    'triggerUid ' +
+      (uid || '（なし）') +
+      '、トリガーの ID ' +
+      JSON.stringify(ids) +
+      '、一致 ' +
+      matched,
+  );
+  if (!matched) return;
+  const detail = publishMenuSpike_('時間主導のトリガー');
   log_('メニューの公開の代わり（トリガー）', 'OK', detail);
 }
 
@@ -415,7 +469,7 @@ const STAGES = [
   },
   // 段階 5: メニューの公開のやり直し
   function () {
-    const same = publishMenuSpike('同じ実行から（段階 5）');
+    const same = publishMenuSpike_('同じ実行から（段階 5）');
     ScriptApp.newTrigger(TRIGGER_HANDLER)
       .timeBased()
       .after(60 * 1000)
