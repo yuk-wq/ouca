@@ -9,3 +9,6 @@ coverage/
 .clasprc.json
 .clasp*.json
 !.clasp.*.example.json
+
+# 技術検証の出力
+spikes/*/out/
