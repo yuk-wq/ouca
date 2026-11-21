@@ -1,0 +1,28 @@
+{
+  "name": "ouca",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "node scripts/build.mjs",
+    "test": "vitest run",
+    "typecheck": "tsc -p src/shared && tsc -p src/client && tsc -p src/server && tsc -p tsconfig.tooling.json",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "push:test": "node scripts/push-test.mjs"
+  },
+  "devDependencies": {
+    "@google/clasp": "^3.4.1",
+    "@preact/preset-vite": "^2.10.6",
+    "@types/google-apps-script": "^2.0.15",
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
+    "preact": "^11.2.0",
+    "prettier": "^3.10.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.8",
+    "vite-plugin-singlefile": "^2.3.4",
+    "vitest": "^5.1.1"
+  }
+}

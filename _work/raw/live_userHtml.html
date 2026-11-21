@@ -1,0 +1,410 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>今週のコーヒー</title>
+<style>
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent;}
+body { margin: 0; background: #f3e9d2; color: #3b2d23; font-family: -apple-system, "Hiragino Sans", sans-serif;}
+.wrap { max-width: 600px; margin: 0 auto; padding: 14px 12px 96px;}
+.head { text-align: center; padding: 6px 0 2px;}
+.tagline { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 12px; letter-spacing:.24em; color: #6d4c2f;}
+.head h1 { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 25px; letter-spacing:.2em; margin: 4px 0 2px; color: #43301d;}
+.notice { font-size: 12.5px; color: #a8402a; font-weight: 700; margin-top: 2px;}
+.rule { font-size: 12px; color: #8a7663; margin-top: 4px;}
+.cat-head { display: flex; align-items: baseline; justify-content: space-between; margin: 16px 2px 8px;}
+.cat-name { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 17px; font-weight: 700; letter-spacing:.08em; color: #43301d;}
+.cat-price { font-size: 12.5px; color: #8a6a45;}
+.card { background: #fffaf0; border: 1.5px solid #e0d0ae; border-radius: 14px; padding: 11px 12px 12px; margin-bottom: 9px;}
+.card.sel { border-color: #8a4b2a; background: #fff6e3; box-shadow: 0 1px 6px rgba(138,75,42,.18);}
+.r1 { display: flex; align-items: flex-start; gap: 7px; min-height: 42px;}
+.emoji { font-size: 19px; line-height: 1.35;}
+.iname { font-size: 15px; font-weight: 700; line-height: 1.4; color: #43301d; flex: 1;}
+.new { display: inline-block; background: #9c3a24; color: #fff; font-size: 10px; font-weight: 700; border-radius: 4px; padding: 2px 6px; margin-left: 5px; vertical-align: 2px;}
+.unit { font-size: 11.5px; color: #8a6a45; white-space: nowrap; padding-top: 3px;}
+.tags { font-size: 12px; color: #7a5f45; margin: 3px 0 0 2px; line-height: 1.5; min-height: 18px;}
+.chips { display: flex; gap: 6px; margin-top: 9px;}
+.chip { flex: 1; min-height: 42px; border-radius: 10px; border: 1.5px solid #d8c49a; background: #fff; color: #6d4c2f; font-size: 14px; font-weight: 600; cursor: pointer; padding: 0;}
+.chip.on { background: #8a4b2a; border-color: #8a4b2a; color: #fff;}
+.chip.clear { flex: 0 0 42px; color: #a8402a; border-color: #d9b8a6; font-weight: 700;}
+.detail-btn { margin-top: 8px; background: none; border: none; color: #8a4b2a; font-size: 12px; padding: 2px; cursor: pointer;}
+.face2 { display: flex; align-items: center; gap: 8px;}
+.roast-mini { display: flex; align-items: center; gap: 4px; font-size: 10.5px; color: #6d4c2f; white-space: nowrap;}
+.roast-mini .dot { width: 5px; height: 5px;}
+.roast-mini .dot.on { width: 8px; height: 8px;}
+.rm-lbl { font-weight: 700;}
+.card.blocked { border-color: #c0392b; background: #fdf0ec;}
+.inline-warn { color: #a8402a; font-weight: 700; font-size: 12.5px; margin-top: 7px;}
+.detail { margin-top: 4px; border-top: 1px dashed #d8c49a; padding-top: 8px;}
+.desc { font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; font-size: 12.5px; line-height: 1.7; color: #5d4630;}
+.spec { display: flex; gap: 10px; justify-content: space-between; flex-wrap: wrap; margin-top: 8px;}
+.roast { font-size: 11px; color: #6d4c2f;}
+.scale { display: flex; align-items: center; gap: 5px; margin-top: 4px;}
+.dot { width: 7px; height: 7px; border-radius: 50%; background: #cdbb96;}
+.dot.on { width: 11px; height: 11px; background: #43301d;}
+.meters { display: grid; grid-template-columns: auto auto; gap: 3px 16px; font-size: 11.5px; color: #6d4c2f;}
+.m { display: flex; align-items: center; gap: 6px;}
+.beans { display: inline-flex; gap: 2.5px;}
+.bean { width: 9px; height: 13px; border-radius: 50%; background: #d9c9a4; display: inline-block;}
+.bean.on { background: #43301d;}
+.filters { margin: 0 0 6px; }
+.f-row { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.f-lbl { font-size: 11.5px; font-weight: 700; color: #8a6a45; width: 38px; }
+.f-chip { border: 1.5px solid #d8c49a; background: #fff; color: #6d4c2f; border-radius: 999px; font-size: 12px; font-weight: 600; padding: 6px 12px; cursor: pointer; }
+.f-chip.on { background: #8a4b2a; border-color: #8a4b2a; color: #fff; }
+.no-match { text-align: center; color: #8a7663; font-size: 13px; padding: 18px 0; }
+.guide { border: 1.6px dashed #a8402a; border-radius: 8px; padding: 10px 12px; margin: 2px 0 12px; font-size: 12px; line-height: 1.8; color: #5d4630; font-family: "Hiragino Mincho ProN", "Yu Mincho", serif;}
+.g-title { font-size: 13.5px; font-weight: 700; color: #43301d;}
+.form { margin-top: 22px; background: #fffaf0; border: 1.5px solid #e0d0ae; border-radius: 14px; padding: 14px;}
+.form h2 { font-size: 16px; margin: 0 0 2px; color: #43301d;}
+.fsub { font-size: 12px; color: #8a7663;}
+label.lbl { display: block; font-size: 13px; font-weight: 700; color: #6f4e37; margin: 13px 0 6px;}
+input[type=text], textarea { width: 100%; padding: 11px 12px; border-radius: 10px; border: 1px solid #d8cbb8; background: #fff; font-size: 15px; color: #3b2d23;}
+textarea { resize: vertical; min-height: 50px;}
+.seg { display: flex; gap: 6px;}
+.seg button { flex: 1; min-height: 44px; border-radius: 10px; border: 1.5px solid #d8c49a; background: #fff; color: #3b2d23; font-size: 14.5px; cursor: pointer;}
+.seg button.on { background: #6f4e37; color: #fff; border-color: #6f4e37; font-weight: 700;}
+.picked { font-size: 13px; line-height: 1.7; margin-top: 12px; color: #5d4630; white-space: pre-wrap;}
+.warn { color: #c0392b; font-size: 13px; min-height: 18px; margin-top: 2px;}
+.done { display: none; margin-top: 14px; padding: 12px; border: 1.5px dashed #6f4e37; border-radius: 12px; background: #fff; font-size: 14px; line-height: 1.7; white-space: pre-wrap;}
+.reset { width: 100%; margin-top: 8px; padding: 10px; border: 1px solid #d8cbb8; border-radius: 10px; background: transparent; color: #6f4e37; font-size: 13px; cursor: pointer; display: none;}
+.bar { position: sticky; top: 8px; margin: 4px 0 12px; background: #43301d; color: #fff; border-radius: 14px; padding: 10px 12px; display: flex; align-items: center; gap: 10px; box-shadow: 0 4px 14px rgba(60,40,15,.35); z-index: 5;}
+.b-sum { flex: 1; font-size: 12.5px; line-height: 1.45;}
+.b-sum b { font-size: 16.5px;}
+.bar button { border: none; border-radius: 10px; background: #c96f3b; color: #fff; font-size: 14.5px; font-weight: 700; padding: 12px 16px; cursor: pointer; white-space: nowrap;}
+.bar button:disabled { opacity:.45;}
+.bar.over { background: #8e2f22;}
+.b-warn { color: #ffd9a8; font-weight: 700;}
+.b-rem { font-size: 11px; color: #e8d9bd;}
+.submit { width: 100%; margin-top: 10px; min-height: 50px; border: none; border-radius: 12px; background: #8a4b2a; color: #fff; font-size: 16px; font-weight: 700; cursor: pointer;}
+.submit:disabled { opacity:.4;}
+</style>
+</head>
+<body>
+<div class="wrap">
+<div class="head">
+<div class="tagline">丁寧に焙煎した、豆のある暮らし</div>
+<h1>COFFEE MENU</h1>
+<div class="notice" id="notice" style="display:none"></div>
+</div>
+
+<div class="guide">
+<div class="g-title">ご注文の前に</div>
+・週に一度、土曜日に焙煎しています。焙煎したての豆をお届けします。<br>
+・ご注文は3種類・合計450gまで。1種類100gから、50g単位で選べます。<br>
+・1杯15gが目安なので、150gでちょうど10杯分がおすすめです。<br>
+・受け取りは手渡し、または郵送（送料¥300）から選べます。
+</div>
+
+<div class="bar" style="display:none">
+<div class="b-sum" id="barSum">まだ選ばれていません</div>
+<button id="barGo" type="button" disabled>注文へ進む</button>
+</div>
+
+<div class="filters">
+<div class="f-row"><span class="f-lbl">焙煎度</span><button type="button" class="f-chip on" data-fr="all">すべて</button><button type="button" class="f-chip" data-fr="light">浅め</button><button type="button" class="f-chip" data-fr="mid">中</button><button type="button" class="f-chip" data-fr="dark">深め</button></div>
+<div class="f-row"><span class="f-lbl">味わい</span><button type="button" class="f-chip on" data-ft="all">すべて</button><button type="button" class="f-chip" data-ft="sweet">甘味</button><button type="button" class="f-chip" data-ft="acid">酸味</button><button type="button" class="f-chip" data-ft="body">コク</button><button type="button" class="f-chip" data-ft="aroma">香り</button></div>
+<div class="f-row"><button type="button" class="f-chip" id="decafToggle">デカフェのみ</button></div>
+</div>
+
+<div id="menu"><p style="text-align:center;color:#8a7663">読み込んでいます…</p></div>
+
+<div class="form" id="orderForm">
+<h2>ご注文はこちら</h2>
+<div class="fsub">量を選んだら、あとは名前だけ。確認はLINEでします。</div>
+
+<label class="lbl" for="uname">お名前（LINEの名前）</label>
+<input type="text" id="uname" placeholder="例: 岡本" autocomplete="name">
+
+<label class="lbl">受け取り方法</label>
+<div class="seg">
+<button id="dHand" type="button" class="on">手渡し</button>
+<button id="dPost" type="button">郵送（+¥300）</button>
+</div>
+
+<label class="lbl" for="unote">備考（任意）</label>
+<textarea id="unote" placeholder="渡せる日などあれば"></textarea>
+
+<div class="picked" id="picked"></div>
+<div class="warn" id="warn"></div>
+<button class="submit" id="submit" type="button" disabled>この内容で注文する</button>
+<div class="done" id="done"></div>
+<button class="reset" id="reset" type="button">入力をリセットしてもう一度試す</button>
+</div>
+
+</div>
+
+<script>
+
+var MENU = null;
+
+var qty = {};
+var openMap = {};
+var blocked = {};
+var filterRoast = 'all', filterTaste = 'all', filterDecaf = false;
+function matchFilter(it) {
+if (filterDecaf && it.cat.indexOf('DECAF') !== 0) return false;
+if (filterRoast === 'light' && it.roast > 2) return false;
+if (filterRoast === 'mid' && (it.roast < 3 || it.roast > 4)) return false;
+if (filterRoast === 'dark' && it.roast < 5) return false;
+if (filterTaste === 'all') return true;
+var v = { sweet: it.sweet, acid: it.acid, body: it.body, aroma: it.aroma }[filterTaste];
+var mx = Math.max(it.sweet, it.acid, it.body, it.aroma);
+return v >= 4 || v === mx;
+}
+function syncFilterChips() {
+Array.prototype.forEach.call(document.querySelectorAll('[data-fr]'), function (b) { b.classList.toggle('on', b.getAttribute('data-fr') === filterRoast); });
+Array.prototype.forEach.call(document.querySelectorAll('[data-ft]'), function (b) { b.classList.toggle('on', b.getAttribute('data-ft') === filterTaste); });
+document.getElementById('decafToggle').classList.toggle('on', filterDecaf);
+}
+document.getElementById('decafToggle').onclick = function () { filterDecaf = !filterDecaf; syncFilterChips(); render(); };
+Array.prototype.forEach.call(document.querySelectorAll('[data-fr]'), function (b) { b.onclick = function () { filterRoast = b.getAttribute('data-fr'); syncFilterChips(); render(); }; });
+Array.prototype.forEach.call(document.querySelectorAll('[data-ft]'), function (b) { b.onclick = function () { filterTaste = b.getAttribute('data-ft'); syncFilterChips(); render(); }; });
+
+var delivery = 'hand';
+
+function gramChoices() {
+var arr = [];
+for (var g = MENU.minGrams; g <= 300; g += MENU.step) arr.push(g);
+return arr;
+}
+
+function yen(n) { return '¥' + n.toLocaleString('ja-JP');}
+
+function totals() {
+var g = 0, t = 0, k = 0;
+MENU.items.forEach(function (it) {
+var q = qty[it.name] || 0;
+if (q > 0) { k++; g += q; t += q / 100 * it.price;}
+});
+return { g: g, t: t, k: k};
+}
+
+function beans(n) {
+var s = '<span class="beans">';
+for (var i = 1; i <= 5; i++) s += '<span class="bean' + (i <= n? ' on': '') + '"></span>';
+return s + '</span>';
+}
+
+function roastScale(n) {
+var s = '<span>浅</span>';
+for (var i = 1; i <= 7; i++) s += '<span class="dot' + (i === n? ' on': '') + '"></span>';
+return s + '<span>深</span>';
+}
+
+function render() {
+var box = document.getElementById('menu');
+box.innerHTML = '';
+MENU.cats.forEach(function (c) {
+var list = MENU.items.filter(function (it) { return it.cat === c.cat && matchFilter(it); });
+if (!list.length) return;
+var head = document.createElement('div'); head.className = 'cat-head';
+head.innerHTML = '<span class="cat-name">🫘 ' + c.cat + '</span><span class="cat-price">100g ' + c.price + '円</span>';
+box.appendChild(head);
+list.forEach(function (it) {
+var card = document.createElement('div');
+card.className = 'card' + ((qty[it.name] || 0) > 0? ' sel': '');
+
+var r1 = document.createElement('div'); r1.className = 'r1';
+var em = document.createElement('div'); em.className = 'emoji'; em.textContent = it.emoji;
+var nm = document.createElement('div'); nm.className = 'iname'; nm.textContent = it.name;
+if (it.isNew) { var b = document.createElement('span'); b.className = 'new'; b.textContent = 'NEW'; nm.appendChild(b);}
+r1.appendChild(em); r1.appendChild(nm);
+
+var tg = document.createElement('div'); tg.className = 'tags'; tg.textContent = it.tags;
+var f2 = document.createElement('div'); f2.className = 'face2';
+var rm = document.createElement('div'); rm.className = 'roast-mini';
+rm.innerHTML = '<span class="rm-lbl">焙煎</span>' + roastScale(it.roast);
+f2.appendChild(tg); f2.appendChild(rm);
+
+var ch = document.createElement('div'); ch.className = 'chips';
+if ((qty[it.name] || 0) > 0) {
+var clr = document.createElement('button'); clr.type = 'button'; clr.className = 'chip clear'; clr.textContent = '×';
+clr.onclick = function () { qty[it.name] = 0; render();};
+ch.appendChild(clr);
+}
+gramChoices().forEach(function (g) {
+var btn = document.createElement('button'); btn.type = 'button';
+btn.className = 'chip' + ((qty[it.name] || 0) === g? ' on': '');
+btn.textContent = g + 'g';
+btn.onclick = function () {
+var cur = totals();
+var afterG = cur.g - (qty[it.name] || 0) + g;
+var afterK = cur.k + (((qty[it.name] || 0) === 0 && g > 0) ? 1 : 0);
+if (afterG > MENU.maxGrams || afterK > MENU.maxTypes) {
+blocked[it.name] = afterK > MENU.maxTypes
+? MENU.maxTypes + '種類までです'
+: '合計' + MENU.maxGrams + 'gまでです（あと' + (MENU.maxGrams - (cur.g - (qty[it.name] || 0))) + 'gまで）';
+render();
+setTimeout(function () { blocked[it.name] = ''; render(); }, 2600);
+return;
+}
+qty[it.name] = g; render();
+};
+ch.appendChild(btn);
+});
+
+var db = document.createElement('button'); db.type = 'button'; db.className = 'detail-btn';
+db.textContent = openMap[it.name]? '詳細をとじる ▴': '詳細（味わい・焙煎度）▾';
+db.onclick = function () { openMap[it.name] =!openMap[it.name]; render();};
+
+if (blocked[it.name]) {
+card.className += ' blocked';
+var bw = document.createElement('div'); bw.className = 'inline-warn';
+bw.textContent = '⚠ ' + blocked[it.name];
+card.appendChild(r1); card.appendChild(f2); card.appendChild(ch); card.appendChild(bw); card.appendChild(db);
+} else {
+card.appendChild(r1); card.appendChild(f2); card.appendChild(ch); card.appendChild(db);
+}
+
+if (openMap[it.name]) {
+var dt = document.createElement('div'); dt.className = 'detail';
+var ds = document.createElement('div'); ds.className = 'desc'; ds.textContent = it.desc;
+var sp = document.createElement('div'); sp.className = 'spec';
+var ro = document.createElement('div'); ro.className = 'roast';
+ro.innerHTML = '焙煎度<div class="scale">' + roastScale(it.roast) + '</div>';
+var me = document.createElement('div'); me.className = 'meters';
+me.innerHTML =
+'<span class="m">甘味 ' + beans(it.sweet) + '</span>' +
+'<span class="m">酸味 ' + beans(it.acid) + '</span>' +
+'<span class="m">コク ' + beans(it.body) + '</span>' +
+'<span class="m">香り ' + beans(it.aroma) + '</span>';
+sp.appendChild(ro); sp.appendChild(me);
+dt.appendChild(ds); dt.appendChild(sp);
+card.appendChild(dt);
+}
+box.appendChild(card);
+});
+});
+if (!box.children.length) {
+var nm = document.createElement('p'); nm.className = 'no-match';
+nm.textContent = '条件に合う豆がありません';
+box.appendChild(nm);
+}
+updateSummary();
+}
+
+function orderLines() {
+var lines = [];
+MENU.items.forEach(function (it) {
+var q = qty[it.name] || 0;
+if (q > 0) lines.push('・' + it.name + ' ' + q + 'g（' + yen(q / 100 * it.price) + '）');
+});
+return lines;
+}
+
+function updateSummary() {
+var tt = totals();
+var ship = delivery === 'post' && tt.t > 0? MENU.shipping: 0;
+var w = '';
+if (tt.g > MENU.maxGrams) w = '合計' + MENU.maxGrams + 'gまでです（今 ' + tt.g + 'g）';
+else if (tt.k > MENU.maxTypes) w = MENU.maxTypes + '種類までです（今 ' + tt.k + '種類）';
+document.getElementById('warn').textContent = w;
+
+var lines = orderLines();
+document.getElementById('picked').textContent = lines.length
+? '選んだもの:\n' + lines.join('\n') + '\n豆代 ' + yen(tt.t) + ' ＋ 送料 ' + yen(ship) + ' ＝ 合計 ' + yen(tt.t + ship)
+: '';
+
+var bar = document.getElementById('barSum');
+var barWrap = document.querySelector('.bar');
+barWrap.style.display = tt.t > 0 ? 'flex' : 'none';
+if (w) {
+barWrap.classList.add('over');
+bar.innerHTML = '<span class="b-warn">⚠ ' + w + '</span><br>' + tt.k + '種類 ／ ' + tt.g + 'g ／ ' + yen(tt.t + ship);
+} else {
+barWrap.classList.remove('over');
+var remK = MENU.maxTypes - tt.k, remG = MENU.maxGrams - tt.g;
+var remTxt = (remK <= 0 || remG <= 0) ? '上限いっぱいです' : 'あと' + remK + '種類・' + remG + 'gまで選べます';
+bar.innerHTML = tt.t > 0
+? tt.k + '種類 ／ ' + tt.g + 'g<br><b>' + yen(tt.t + ship) + '</b>' + (ship? '（送料込み）': '') + '<br><span class="b-rem">' + remTxt + '</span>'
+: 'まだ選ばれていません';
+}
+var nameOk = document.getElementById('uname').value.trim().length > 0;
+var ok = tt.t > 0 &&!w;
+document.getElementById('barGo').disabled =!ok;
+document.getElementById('submit').disabled =!(ok && nameOk);
+}
+
+document.getElementById('barGo').onclick = function () {
+document.getElementById('orderForm').scrollIntoView({ behavior: 'smooth'});
+};
+document.getElementById('dHand').onclick = function () {
+delivery = 'hand';
+this.className = 'on'; document.getElementById('dPost').className = '';
+updateSummary();
+};
+document.getElementById('dPost').onclick = function () {
+delivery = 'post';
+this.className = 'on'; document.getElementById('dHand').className = '';
+updateSummary();
+};
+document.getElementById('uname').addEventListener('input', updateSummary);
+
+document.getElementById('submit').onclick = function () {
+var btn = this;
+btn.disabled = true;
+btn.textContent = '送信しています…';
+var sel = [];
+MENU.items.forEach(function (it) {
+var q = qty[it.name] || 0;
+if (q > 0) sel.push({ name: it.name, grams: q });
+});
+google.script.run
+.withSuccessHandler(function (res) {
+var name = document.getElementById('uname').value.trim();
+var d = document.getElementById('done');
+d.style.display = 'block';
+d.textContent =
+'注文を受け付けました。ありがとうございます！\n\n' +
+name + ' さんの注文:\n' + orderLines().join('\n') +
+'\n受け取り: ' + (delivery === 'post' ? '郵送' : '手渡し') +
+'\n合計 ' + yen(res.total) + '（' + res.grams + 'g）' +
+'\n\n内容を確認したら、LINEで連絡します。';
+btn.textContent = '注文済み';
+document.getElementById('reset').style.display = 'block';
+d.scrollIntoView({ behavior: 'smooth' });
+})
+.withFailureHandler(function (err) {
+document.getElementById('warn').textContent = '送信できませんでした: ' + (err && err.message ? err.message : '');
+btn.disabled = false;
+btn.textContent = 'この内容で注文する';
+})
+.submitOrder({
+name: document.getElementById('uname').value.trim(),
+delivery: delivery,
+note: document.getElementById('unote').value.trim(),
+items: sel
+});
+};
+
+document.getElementById('reset').onclick = function () {
+qty = {}; delivery = 'hand';
+document.getElementById('dHand').className = 'on';
+document.getElementById('dPost').className = '';
+document.getElementById('done').style.display = 'none';
+this.style.display = 'none';
+var s = document.getElementById('submit');
+s.textContent = 'この内容で注文する';
+render();
+};
+
+google.script.run
+.withSuccessHandler(function (data) {
+MENU = data;
+if (MENU.notice) {
+var n = document.getElementById('notice');
+n.textContent = MENU.notice;
+n.style.display = 'block';
+}
+render();
+})
+.withFailureHandler(function () {
+document.getElementById('menu').innerHTML =
+'<p style="text-align:center;color:#c0392b">メニューを読み込めませんでした。時間をおいて開き直してください。</p>';
+})
+.getMenuData();
+</script>
+</body>
+</html>

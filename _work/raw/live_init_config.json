@@ -1,0 +1,20 @@
+{
+ "functionNames": [
+  "doGet",
+  "getMenuData",
+  "testMenuData",
+  "submitOrder"
+ ],
+ "sandboxMode": "IFRAME_SANDBOX",
+ "callbackTimeout": 390000,
+ "deploymentId": "<現行のデプロイID>",
+ "eei": "",
+ "sandboxHost": "https://<現行のサンドボックス>-script.googleusercontent.com",
+ "clientSideProperties": {
+  "google.script.sandbox.mode": "IFRAME_SANDBOX",
+  "google.script.use_fetch_for_post_form": true,
+  "google.script.host.origin": "https://docs.google.com"
+ },
+ "actionPrefix": "/macros/s/<現行のデプロイID>",
+ "ncc": "{\"awhs\":true}"
+}

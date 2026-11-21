@@ -1,0 +1,75 @@
+52,53d51
+< #filterToggle { width: 100%; border: 1.5px solid #d8c49a; background: #fff; color: #6d4c2f; border-radius: 10px; font-size: 13px; font-weight: 700; padding: 9px 12px; cursor: pointer; margin-bottom: 8px; text-align: left; }
+< #filterToggle.on { background: #8a4b2a; border-color: #8a4b2a; color: #fff; }
+99,100c97
+< ・受け取りは手渡し、または郵送（送料¥300）から選べます。<br>
+< ・送料は1回の注文で¥300固定です。まとめて買うほど「送料込みの100gあたり」は下がります（今の単価は下のバーに出ます）。
+---
+> ・受け取りは手渡し、または郵送（送料¥300）から選べます。
+108,109c105
+< <button type="button" id="filterToggle">絞り込み ▾</button>
+< <div class="filters" id="filterPanel" style="display:none">
+---
+> <div class="filters">
+111,112c107
+< <div class="f-row" id="familyRow"><span class="f-lbl">味わい</span></div>
+< <div class="f-row"><span class="f-lbl">強さ</span><button type="button" class="f-chip on" data-fb="all">すべて</button><button type="button" class="f-chip" data-fb="sweet">甘味</button><button type="button" class="f-chip" data-fb="acid">酸味</button><button type="button" class="f-chip" data-fb="body">コク</button><button type="button" class="f-chip" data-fb="aroma">香り</button></div>
+---
+> <div class="f-row"><span class="f-lbl">味わい</span><button type="button" class="f-chip on" data-ft="all">すべて</button><button type="button" class="f-chip" data-ft="sweet">甘味</button><button type="button" class="f-chip" data-ft="acid">酸味</button><button type="button" class="f-chip" data-ft="body">コク</button><button type="button" class="f-chip" data-ft="aroma">香り</button></div>
+144c139
+< // ===== メニューはスプレッドシート「メニュー設定」タブから読み込む =====
+---
+> 
+150,151c145
+< var filterRoast = 'all', filterFamily = 'all', filterBalance = 'all', filterDecaf = false;
+< var panelOpen = false;
+---
+> var filterRoast = 'all', filterTaste = 'all', filterDecaf = false;
+157,159c151,152
+< if (filterFamily !== 'all' && (it.families || []).indexOf(filterFamily) < 0) return false;
+< if (filterBalance === 'all') return true;
+< var v = { sweet: it.sweet, acid: it.acid, body: it.body, aroma: it.aroma }[filterBalance];
+---
+> if (filterTaste === 'all') return true;
+> var v = { sweet: it.sweet, acid: it.acid, body: it.body, aroma: it.aroma }[filterTaste];
+165,167c158
+< Array.prototype.forEach.call(document.querySelectorAll('[data-ff]'), function (b) { b.classList.toggle('on', b.getAttribute('data-ff') === filterFamily); });
+< Array.prototype.forEach.call(document.querySelectorAll('[data-fb]'), function (b) { b.classList.toggle('on', b.getAttribute('data-fb') === filterBalance); });
+< updateFilterToggle();
+---
+> Array.prototype.forEach.call(document.querySelectorAll('[data-ft]'), function (b) { b.classList.toggle('on', b.getAttribute('data-ft') === filterTaste); });
+172,199c163
+< Array.prototype.forEach.call(document.querySelectorAll('[data-fb]'), function (b) { b.onclick = function () { filterBalance = b.getAttribute('data-fb'); syncFilterChips(); render(); }; });
+< function updateFilterToggle() {
+< var labels = [];
+< if (filterRoast !== 'all') labels.push({ light: '浅め', mid: '中', dark: '深め' }[filterRoast]);
+< if (filterFamily !== 'all') labels.push(filterFamily);
+< if (filterBalance !== 'all') labels.push({ sweet: '甘味', acid: '酸味', body: 'コク', aroma: '香り' }[filterBalance]);
+< if (filterDecaf) labels.push('デカフェ');
+< var t = document.getElementById('filterToggle');
+< t.textContent = '絞り込み' + (labels.length ? '：' + labels.join('・') : '') + (panelOpen ? ' ▴' : ' ▾');
+< t.classList.toggle('on', labels.length > 0);
+< }
+< document.getElementById('filterToggle').onclick = function () {
+< panelOpen = !panelOpen;
+< document.getElementById('filterPanel').style.display = panelOpen ? 'block' : 'none';
+< updateFilterToggle();
+< };
+< function buildFamilyChips() {
+< var row = document.getElementById('familyRow');
+< var fams = [];
+< MENU.items.forEach(function (it) { (it.families || []).forEach(function (f) { if (fams.indexOf(f) < 0) fams.push(f); }); });
+< var all = document.createElement('button'); all.type = 'button'; all.className = 'f-chip on'; all.setAttribute('data-ff', 'all'); all.textContent = 'すべて';
+< row.appendChild(all);
+< fams.forEach(function (f) {
+< var b = document.createElement('button'); b.type = 'button'; b.className = 'f-chip'; b.setAttribute('data-ff', f); b.textContent = f;
+< row.appendChild(b);
+< });
+< Array.prototype.forEach.call(row.querySelectorAll('[data-ff]'), function (b) { b.onclick = function () { filterFamily = b.getAttribute('data-ff'); syncFilterChips(); render(); }; });
+< }
+---
+> Array.prototype.forEach.call(document.querySelectorAll('[data-ft]'), function (b) { b.onclick = function () { filterTaste = b.getAttribute('data-ft'); syncFilterChips(); render(); }; });
+356d319
+< if (ship > 0 && tt.g > 0) remTxt += '（送料込みで100gあたり約¥' + Math.round((tt.t + ship) / (tt.g / 100)) + '）';
+438d400
+< buildFamilyChips();

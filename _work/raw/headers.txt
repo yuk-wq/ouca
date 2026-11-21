@@ -1,0 +1,18 @@
+HTTP/2 200 
+content-type: text/html; charset=utf-8
+cache-control: no-cache, no-store, max-age=0, must-revalidate
+pragma: no-cache
+expires: Mon, 01 Jan 1990 00:00:00 GMT
+date: Sat, 21 Nov 2026 03:57:22 GMT
+x-frame-options: SAMEORIGIN
+content-security-policy: frame-ancestors 'self'
+reporting-endpoints: default="/macros/s/<現行のデプロイID>/web-reports?bl=editors.maestro_20261110.02_p0&app=37&clss=1&context=<伏せた値>&build-label=editors.maestro_20261110.02_p0&is-cached-offline=false"
+document-policy: include-js-call-stacks-in-crash-reports
+referrer-policy: origin
+server: ESF
+x-xss-protection: 0
+x-content-type-options: nosniff
+alt-svc: h3=":443"; ma=2592000,h3-29=":443"; ma=2592000
+accept-ranges: none
+vary: Accept-Encoding
+
