@@ -45,7 +45,7 @@ describe('dist/Code.js のトップレベル', () => {
 });
 
 describe('doGet', () => {
-  it('index の HTML を返し、版の番号つきのタイトルを付ける', () => {
+  it('index の HTML を返し、バージョンの番号つきのタイトルを付ける', () => {
     const calls: unknown[][] = [];
     const output = {
       setTitle(title: string) {
