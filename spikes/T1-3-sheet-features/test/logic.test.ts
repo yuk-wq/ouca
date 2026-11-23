@@ -822,7 +822,7 @@ describe('summarize_ S10 持ち主のメール、S14 getOwner', () => {
     expect(out.S10.evidence).toContain('active が空');
     expect(out.S14.verdict).toBe('入口ごとの表');
   });
-  it('メニューで止まったときは、代わりの守りを メインのセッションが決めると書く', () => {
+  it('メニューで止まったときは、代わりの守りをメインのセッションが決めると書く', () => {
     const out = sum([ng(E.menu), ok(E.button), ok(E.edit), ok(E.timer)]);
     expect(out.S10.impact).toContain('代わりの守り');
     expect(out.S10.impact).not.toContain('トリガーでは持ち主の確かめを使わない');
@@ -924,6 +924,14 @@ describe('summarize_ S13 偽のイベント', () => {
     ]);
     expect(out.S13.verdict).toBe('form を送れない');
     expect(out.S13.evidence).toContain('form1');
+  });
+  it('form1 の誤りの後に form1 は送れ、form2 がまだなら、form を送れないにせず未確定', () => {
+    const out = sum([
+      row('S13', E.run, 'fake.error', 'form1:送れなかった'),
+      fake('値だけ', 'false'),
+      fake('form1', 'false'),
+    ]);
+    expect(out.S13.verdict).toBe('未確定');
   });
   it('form2 の行がなければ未確定で、form2 を足りない事実に出す', () => {
     const out = sum([fake('値だけ', 'false'), fake('form1', 'false')]);
