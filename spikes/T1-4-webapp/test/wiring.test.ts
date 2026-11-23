@@ -77,6 +77,23 @@ describe('画面のつながり', () => {
     expect(touched).toBeGreaterThanOrEqual(0);
     expect(sent).toBeLessThan(touched);
   });
+  it('main.tsx は、sessionStorage を関数の中でだけ読み、ビルドの印を meta から読む', () => {
+    const main = stripComments(read('page/main.tsx'));
+    expect(main).toContain('detectVisitKind(() => window.sessionStorage)');
+    const all = main.match(/sessionStorage/g) ?? [];
+    const wrapped = main.match(/\(\)\s*=>\s*window\.sessionStorage/g) ?? [];
+    expect(all.length).toBe(wrapped.length);
+    expect(main).toContain('buildOf(');
+  });
+  it('開き方を選ぶ前は「調べる」が押せない（canProbe を使い、ボタンを無効にする）', () => {
+    const main = stripComments(read('page/main.tsx'));
+    expect(main).toMatch(/canProbe\(/);
+    expect(main).toMatch(/<button[^>]*disabled=\{[^}]*(ready|canProbe)/);
+  });
+  it('via を読み終える前は「調べる」が押せない', () => {
+    const main = stripComments(read('page/main.tsx'));
+    expect(main).toMatch(/via\s*===\s*null/);
+  });
   it('make-page.mjs は、ビルドの前に page/ の型の検査（tsc -p page）を動かす', () => {
     const make = read('make-page.mjs');
     const tsc = make.search(/tsc/);
@@ -101,6 +118,17 @@ describe('make-page.mjs で作った Page.html', () => {
     const m = /<script(?![^>]*\btype=)[^>]*>([\s\S]*?)<\/script>/.exec(html);
     expect(m).not.toBeNull();
     expect(m![1]).toContain('recordFact');
+  });
+  it('ビルドの印の目印が、メニューの JSON の目印とは別に1つだけある', () => {
+    const bp = vm.runInContext('BUILD_PLACEHOLDER', ctx) as string;
+    expect(bp).not.toBe(vm.runInContext('PLACEHOLDER', ctx));
+    expect(html.split(bp)).toHaveLength(2);
+    expect(html).toMatch(/<meta[^>]*name="t14-build"/);
+  });
+  it('module でない script は、ビルドの印を meta から読む（メニューの JSON は読まない）', () => {
+    const m = /<script(?![^>]*\btype=)[^>]*>([\s\S]*?)<\/script>/.exec(html);
+    expect(m![1]).toContain('t14-build');
+    expect(m![1]).not.toContain('JSON.parse');
   });
   it('module の script と、module でない小さな script が、両方入っている', () => {
     expect(html).toMatch(/<script[^>]*type="module"/);

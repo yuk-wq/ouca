@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=500" />
+    <meta name="t14-build" content="__OUCA_T14_BUILD__" />
     <title>T1-4 調べる画面</title>
   </head>
   <body>
@@ -14,10 +15,10 @@
     <!-- module でない小さな script。module の script が動かなくても、こちらは動くかを確かめる -->
     <script>
       try {
-        // ビルドの印は、埋め込みの JSON から読む
+        // ビルドの印は、メニューの JSON とは別の meta から読む
         var build = '';
         try {
-          build = JSON.parse(document.getElementById('embedded').textContent).build || '';
+          build = document.querySelector('meta[name="t14-build"]').getAttribute('content') || '';
         } catch (e) {
           build = '';
         }

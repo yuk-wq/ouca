@@ -141,6 +141,9 @@ describe('判定の表（DESIGN.md §2）と Logic.js の判定のデータの�
     expect(ORIGIN_LIST).toHaveLength(9);
     expect(plain(vm.runInContext('ORIGINS', ctx))).toEqual(ORIGIN_LIST);
   });
+  it('開き方の文言は、どれも 100 字以内（recordFact の上限に収まる）', () => {
+    for (const o of ORIGIN_LIST) expect(o.length, o).toBeLessThanOrEqual(100);
+  });
   it('お客さんの印は、DESIGN.md の一覧のとおり（A だけを除き、iPhone のホーム画面からも除く）', () => {
     expect(CUSTOMER_LIST).not.toContain(O.pcA);
     expect(CUSTOMER_LIST).not.toContain(O.iphoneHome);
@@ -209,6 +212,31 @@ describe('summarize_ 最新のビルドの印の行だけを使う', () => {
   });
   it('ビルドの印の行が1つもなければ、すべての行を使う', () => {
     expectVerdict(sum([row('embed', { read: true, same: true })]).W1, 'W1', '読める');
+  });
+});
+
+describe('buildReport_（まとめの先頭に出す、使った印と外した行）', () => {
+  const rep = (rows: unknown[]): any => plain(ctx.buildReport_(rows));
+  it('使った印と、外した行の数を印ごとに返す', () => {
+    const rows = [
+      row('build', 'old', '', '', 'old'),
+      row('embed', '{}', '', '', 'old'),
+      row('module', 'x', '', '', 'old'),
+      row('build', 'new', '', '', 'new'),
+      row('embed', '{}', '', '', 'new'),
+      row('mark', 'x', '', '', ''),
+    ];
+    expect(rep(rows)).toEqual({
+      used: 'new',
+      excluded: [
+        { build: 'old', count: 3 },
+        { build: '', count: 1 },
+      ],
+    });
+  });
+  it('build の行がなければ、使った印は空で、外した行はない', () => {
+    expect(rep([row('embed', '{}')])).toEqual({ used: '', excluded: [] });
+    expect(rep([])).toEqual({ used: '', excluded: [] });
   });
 });
 
@@ -395,16 +423,24 @@ describe('summarize_ W4 保存の残り方', () => {
       st('idb', false, 'unknown', O.androidLine),
     ];
     const t = find(sum(rows).W4, O.androidLine);
+    // 最初の行は数えない。local は 2 行目が残った（1/1）、idb は最初の行だけ
     expect(t.local).toEqual({
       reload: '確かめていない',
       reopen: '確かめていない',
-      unknown: '見分けられない',
+      unknown: '見分けられない（残った 1/1）',
     });
     expect(t.idb).toEqual({
       reload: '確かめていない',
       reopen: '確かめていない',
-      unknown: '見分けられない',
+      unknown: '見分けられない（確かめた回なし）',
     });
+  });
+  it('見分けられない行（unknown）で書けなかったものがあれば、「見分けられない（書けなかった）」', () => {
+    const rows = [
+      st('local', false, 'unknown', O.androidLine),
+      st('local', false, 'unknown', O.androidLine, { wrote: false }),
+    ];
+    expect(find(sum(rows).W4, O.androidLine).local.unknown).toBe('見分けられない（書けなかった）');
   });
   it('/dev の行は、残った消えたの判定に使わず、保存先のハッシュだけを開き方と入口ごとに出す', () => {
     const rows = [
@@ -621,6 +657,22 @@ describe('summarize_ W9 開けないときの案内', () => {
     expectVerdict(r, 'W9', '案内は要らない');
     expect(r.evidence).toContain('数えない');
     expect(r.evidence).toContain(O.iphoneLine);
+  });
+  it('A でログインしたかどうかは、スマホの開き方だけで見る（PC の開き方の user.account は外さない）', () => {
+    const rows = [cannot(O.pcB), account(O.pcB, 'A')];
+    expectVerdict(sum(rows).W9, 'W9', '案内が要る');
+  });
+  it('アカウントの控え（user.account）がないスマホの開き方は、根拠に並べる', () => {
+    const r = sum([opened(O.pcBA), opened(O.iphoneLine), opened(O.androidLine)]).W9;
+    expectVerdict(r, 'W9', '案内は要らない');
+    expect(r.evidence).toContain('アカウントの控えがない');
+    expect(r.evidence).toContain(O.iphoneLine);
+  });
+  it('アカウントの控えがあるスマホの開き方は、「控えがない」の欄に並べない', () => {
+    const rows = [opened(O.pcBA), opened(O.iphoneLine), account(O.iphoneLine, 'B')];
+    const r = sum(rows).W9;
+    const part = r.evidence.split('アカウントの控えがない')[1] ?? '';
+    expect(part).not.toContain(O.iphoneLine);
   });
   it('LINE の行が A でログインしたものだけなら、LINE を確かめていないことになり未確定', () => {
     const rows = [opened(O.pcBA), opened(O.iphoneLine), account(O.iphoneLine, 'A')];
