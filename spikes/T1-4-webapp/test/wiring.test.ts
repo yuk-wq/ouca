@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import vm from 'node:vm';
 import { beforeAll, describe, expect, it } from 'vitest';
+import { EMBED_SAMPLE } from '../page/probe';
 import { createWorld } from './fakes';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -62,6 +63,29 @@ describe('入口の一覧', () => {
   });
 });
 
+describe('画面のつながり', () => {
+  const stripComments = (t: string) =>
+    t.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  it('Code.js と probe.ts の EMBED_SAMPLE が同じ', () => {
+    expect(vm.runInContext('EMBED_SAMPLE', ctx)).toBe(EMBED_SAMPLE);
+  });
+  it('module の先頭で、保存（sessionStorage、localStorage、IndexedDB）に触る前に、module の行を送る', () => {
+    const main = stripComments(read('page/main.tsx'));
+    const sent = main.search(/moduleFact\(/);
+    const touched = main.search(/\b(sessionStorage|localStorage|indexedDB)\b/);
+    expect(sent).toBeGreaterThanOrEqual(0);
+    expect(touched).toBeGreaterThanOrEqual(0);
+    expect(sent).toBeLessThan(touched);
+  });
+  it('make-page.mjs は、ビルドの前に page/ の型の検査（tsc -p page）を動かす', () => {
+    const make = read('make-page.mjs');
+    const tsc = make.search(/tsc/);
+    const build = make.search(/build\(/);
+    expect(tsc).toBeGreaterThanOrEqual(0);
+    expect(tsc).toBeLessThan(build);
+  });
+});
+
 describe('make-page.mjs で作った Page.html', () => {
   let html = '';
   beforeAll(() => {
@@ -72,6 +96,11 @@ describe('make-page.mjs で作った Page.html', () => {
   it('目印が1つだけある', () => {
     const placeholder = vm.runInContext('PLACEHOLDER', ctx) as string;
     expect(html.split(placeholder)).toHaveLength(2);
+  });
+  it('module でない小さな script が、recordFact を呼んでいる', () => {
+    const m = /<script(?![^>]*\btype=)[^>]*>([\s\S]*?)<\/script>/.exec(html);
+    expect(m).not.toBeNull();
+    expect(m![1]).toContain('recordFact');
   });
   it('module の script と、module でない小さな script が、両方入っている', () => {
     expect(html).toMatch(/<script[^>]*type="module"/);

@@ -1,13 +1,26 @@
 import { render } from 'preact';
-import { useState } from 'preact/hooks';
+import { useEffect, useState } from 'preact/hooks';
 import {
-  EMBED_SAMPLE,
+  INITIAL_ORIGIN,
   ORIGIN_CHOICES,
+  canProbe,
+  cannotopenFact,
   detectVisitKind,
+  embedFact,
+  moduleFact,
   nextVisit,
+  noteFact,
+  originHash,
   readEmbedded,
-  viewportFacts,
+  readVia,
+  rttFact,
+  storageFact,
+  toRow,
+  viaNotice,
+  viewportRows,
   withStorage,
+  type Fact,
+  type Via,
   type VisitKind,
 } from './probe';
 
@@ -15,26 +28,20 @@ import {
 declare const google: any; // eslint-disable-line @typescript-eslint/no-explicit-any
 
 // サーバーの関数を Promise にする（呼ぶ関数ごとに1つ）
-function sendFact(
-  scenario: string,
-  origin: string,
-  fact: string,
-  value: string,
-  detail: string,
-): Promise<string> {
+function sendFact(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     google.script.run
       .withSuccessHandler((v: string) => resolve(v))
       .withFailureHandler((e: Error) => reject(e))
-      .recordFact(scenario, origin, fact, value, detail);
+      .recordFact(...args);
   });
 }
-function execProbe(origin: string): Promise<string> {
+function execProbe(origin: string, via: Via, build: string): Promise<string> {
   return new Promise((resolve, reject) => {
     google.script.run
       .withSuccessHandler((v: string) => resolve(v))
       .withFailureHandler((e: Error) => reject(e))
-      .probeExec(origin);
+      .probeExec(origin, via, build);
   });
 }
 function fetchPayload(kb: number): Promise<string> {
@@ -45,19 +52,33 @@ function fetchPayload(kb: number): Promise<string> {
       .getPayload(kb);
   });
 }
+// URL の引数 via（/exec?via=exec、/dev?via=dev）を読む。読めなければ none
+function loadVia(): Promise<Via> {
+  return new Promise((resolve) => {
+    try {
+      google.script.url.getLocation((loc: unknown) => resolve(readVia(loc as never)));
+    } catch {
+      resolve('none');
+    }
+  });
+}
 
-// 開いた時点で、画面を読み込んだ印と、埋め込みの確かめを送る（開き方を選ぶ前でも動く）。
-// 再読み込みか開き直しかも、ここで見分ける（sessionStorage の印を、この時点で付ける）
-const visitKind: VisitKind = detectVisitKind(window.sessionStorage);
-const startup: Promise<unknown> = (async () => {
+// 開いた時点で、最初に module の行を送る（保存や sessionStorage に触る前）。
+// 埋め込みの確かめがその次。ビルドの印は、埋め込みの JSON から読んで送り返す
+const embedded = readEmbedded(document) as { build?: unknown } | null;
+const build = embedded && typeof embedded.build === 'string' ? embedded.build : '';
+const ua = navigator.userAgent;
+const sendRow = (fact: Fact, origin: string) => sendFact(toRow(fact, origin, build, ua));
+
+const startup: Promise<VisitKind> = (async () => {
   try {
-    await sendFact('W2', '', 'module', '動いた', '');
-    const embedded = readEmbedded(document) as { sample?: string } | null;
-    const same = !!embedded && embedded.sample === EMBED_SAMPLE;
-    await sendFact('W1', '', 'embed', JSON.stringify({ read: embedded !== null, same }), '');
+    await sendRow(moduleFact(), '');
+    await sendRow(embedFact(embedded), '');
   } catch {
     // 送れなければ、行が来ない
   }
+  // 再読み込みか開き直しかは、ここで見分ける（sessionStorage の印を、この読み込みで付ける）
+  return detectVisitKind(() => window.sessionStorage);
 })();
 
 function openDb(): Promise<IDBDatabase> {
@@ -85,66 +106,67 @@ async function idbVisit(now: string) {
   return v;
 }
 
+function OriginSelect(props: { value: string; disabled?: boolean; onChange: (v: string) => void }) {
+  return (
+    <select
+      value={props.value}
+      disabled={props.disabled}
+      onChange={(e) => props.onChange((e.target as HTMLSelectElement).value)}
+    >
+      <option value="">選んでください</option>
+      {ORIGIN_CHOICES.map((o) => (
+        <option value={o}>{o}</option>
+      ))}
+    </select>
+  );
+}
+
 function App() {
-  const [origin, setOrigin] = useState(ORIGIN_CHOICES[0]!);
+  const [origin, setOrigin] = useState(INITIAL_ORIGIN);
+  const [via, setVia] = useState<Via | null>(null);
   const [lines, setLines] = useState<string[]>([]);
   const [probed, setProbed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [homeicon, setHomeicon] = useState('');
-  const [cannotOrigin, setCannotOrigin] = useState(ORIGIN_CHOICES[0]!);
+  const [account, setAccount] = useState('なし');
+  const [cannotOrigin, setCannotOrigin] = useState(INITIAL_ORIGIN);
+  const [cannotState, setCannotState] = useState<'cannot' | 'failed'>('cannot');
   const [cannotText, setCannotText] = useState('');
   const say = (s: string) => setLines((l) => [...l, s]);
+  useEffect(() => {
+    loadVia().then(setVia);
+  }, []);
+  const notice = via === null ? '' : viaNotice(via);
+  const ready = canProbe(origin);
 
   async function probe() {
     setBusy(true);
     try {
-      await startup;
+      const kind = await startup;
+      const useVia: Via = via ?? 'none';
       const now = new Date().toISOString();
-      const vp = viewportFacts(window);
-      await sendFact('W3', origin, 'viewport', JSON.stringify(vp), '');
-      await sendFact(
-        'W3-html',
-        origin,
-        'viewport.html',
-        JSON.stringify({ innerWidth: vp.innerWidth }),
-        '',
-      );
-      say(`幅 ${vp.innerWidth}、端末の幅 ${vp.screenWidth}、倍率 ${vp.devicePixelRatio}`);
+      const rows = viewportRows(window);
+      for (const f of rows) await sendRow(f, origin);
+      say(`幅 ${window.innerWidth}、端末の幅 ${window.screen.width}`);
 
+      const hash = originHash(window.location.origin);
+      const where = { hash, via: useVia };
       const ls = withStorage(() => window.localStorage.getItem('t14-visit'));
       const lv = nextVisit(ls.ok ? ls.value : null, now);
       const lw = withStorage(() => window.localStorage.setItem('t14-visit', lv.value));
-      await sendFact(
-        'W4',
-        origin,
-        'storage.local',
-        JSON.stringify({ had: lv.had, count: lv.prevCount, prevAt: lv.prevAt, wrote: lw.ok }),
-        visitKind,
-      );
-      say(`localStorage: 前の値 ${lv.had ? 'あり' : 'なし'}、書けた ${lw.ok}、${visitKind}`);
+      await sendRow(storageFact('local', lv, kind, lw.ok, where), origin);
+      say(`localStorage: 前の値 ${lv.had ? 'あり' : 'なし'}、書けた ${lw.ok}、${kind}`);
 
       try {
         const iv = await idbVisit(now);
-        await sendFact(
-          'W4',
-          origin,
-          'storage.idb',
-          JSON.stringify({ had: iv.had, count: iv.prevCount, prevAt: iv.prevAt, wrote: true }),
-          visitKind,
-        );
-        say(`IndexedDB: 前の値 ${iv.had ? 'あり' : 'なし'}、${visitKind}`);
-      } catch (err) {
-        await sendFact(
-          'W4',
-          origin,
-          'storage.idb',
-          JSON.stringify({ had: false, count: 0, wrote: false, error: String(err) }),
-          visitKind,
-        );
+        await sendRow(storageFact('idb', iv, kind, true, where), origin);
+        say(`IndexedDB: 前の値 ${iv.had ? 'あり' : 'なし'}、${kind}`);
+      } catch {
+        await sendRow(storageFact('idb', nextVisit(null, now), kind, false, where), origin);
         say('IndexedDB: 使えなかった');
       }
 
-      say('exec: ' + (await execProbe(origin)));
+      say('exec: ' + (await execProbe(origin, useVia, build)));
       setProbed(true);
     } catch (err) {
       say('失敗: ' + String(err));
@@ -162,7 +184,7 @@ function App() {
           await fetchPayload(kb);
           times.push(Math.round(performance.now() - t0));
         }
-        await sendFact('W7', origin, 'rtt', JSON.stringify({ size: kb, times }), '');
+        await sendRow(rttFact(kb, times), origin);
         say(`往復 ${kb}KB: ${times.join('、')} ミリ秒`);
       }
     } catch (err) {
@@ -171,10 +193,10 @@ function App() {
     setBusy(false);
   }
 
-  async function note(fact: string, value: string) {
+  async function note(fact: Fact) {
     try {
-      await sendFact('', origin, fact, value, '');
-      say(`控えを送った: ${fact}`);
+      await sendRow(fact, origin);
+      say(`控えを送った: ${fact.fact}`);
     } catch (err) {
       say('失敗: ' + String(err));
     }
@@ -182,34 +204,39 @@ function App() {
 
   return (
     <main style="font:14px sans-serif;padding:8px">
+      {notice && <p style="background:#c00;color:#fff;padding:8px;font-weight:bold">{notice}</p>}
       <h1 style="font-size:18px">T1-4 調べる画面</h1>
       <p>
-        <label>
-          どこから開いたか
-          <select
-            value={origin}
-            disabled={probed}
-            onChange={(e) => setOrigin((e.target as HTMLSelectElement).value)}
-          >
-            {ORIGIN_CHOICES.map((o) => (
-              <option value={o}>{o}</option>
-            ))}
-          </select>
-        </label>
+        どこから開いたか <OriginSelect value={origin} disabled={probed} onChange={setOrigin} />
       </p>
       <p>
-        <button disabled={busy || probed} onClick={probe}>
+        <button disabled={busy || probed || !ready} onClick={probe}>
           調べる（1回の読み込みにつき1回）
         </button>{' '}
-        <button disabled={busy} onClick={rtt}>
+        <button disabled={busy || !ready} onClick={rtt}>
           往復の時間を測る
         </button>
       </p>
       <h2 style="font-size:15px">控えを書く</h2>
       <p>
         画面の幅は端末に合って見えたか{' '}
-        <button onClick={() => note('user.width', 'はい')}>はい</button>{' '}
-        <button onClick={() => note('user.width', 'いいえ')}>いいえ</button>
+        <button disabled={!ready} onClick={() => note(noteFact('user.width', 'はい'))}>
+          はい
+        </button>{' '}
+        <button disabled={!ready} onClick={() => note(noteFact('user.width', 'いいえ'))}>
+          いいえ
+        </button>
+      </p>
+      <p>
+        スマホのこのブラウザでログインしているアカウント{' '}
+        <select value={account} onChange={(e) => setAccount((e.target as HTMLSelectElement).value)}>
+          {['なし', 'A', 'B', 'ほか'].map((a) => (
+            <option value={a}>{a}</option>
+          ))}
+        </select>{' '}
+        <button disabled={!ready} onClick={() => note(noteFact('user.account', account))}>
+          送る
+        </button>
       </p>
       <p>
         ホーム画面に追加したときのアイコン{' '}
@@ -217,17 +244,20 @@ function App() {
           value={homeicon}
           onInput={(e) => setHomeicon((e.target as HTMLInputElement).value)}
         />{' '}
-        <button onClick={() => note('user.homeicon', homeicon)}>送る</button>
+        <button disabled={!ready} onClick={() => note(noteFact('user.homeicon', homeicon))}>
+          送る
+        </button>
       </p>
       <p>
-        開けなかった開き方{' '}
+        開けなかった開き方 <OriginSelect value={cannotOrigin} onChange={setCannotOrigin} /> 様子{' '}
         <select
-          value={cannotOrigin}
-          onChange={(e) => setCannotOrigin((e.target as HTMLSelectElement).value)}
+          value={cannotState}
+          onChange={(e) =>
+            setCannotState((e.target as HTMLSelectElement).value as 'cannot' | 'failed')
+          }
         >
-          {ORIGIN_CHOICES.map((o) => (
-            <option value={o}>{o}</option>
-          ))}
+          <option value="cannot">開けなかった</option>
+          <option value="failed">画面は出たが失敗と出た</option>
         </select>{' '}
         その画面の文言{' '}
         <input
@@ -235,9 +265,8 @@ function App() {
           onInput={(e) => setCannotText((e.target as HTMLInputElement).value)}
         />{' '}
         <button
-          onClick={() =>
-            note('user.cannotopen', JSON.stringify({ origin: cannotOrigin, text: cannotText }))
-          }
+          disabled={!ready || !canProbe(cannotOrigin)}
+          onClick={() => note(cannotopenFact(cannotOrigin, cannotState, cannotText))}
         >
           送る
         </button>

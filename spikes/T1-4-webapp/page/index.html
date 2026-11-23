@@ -14,7 +14,14 @@
     <!-- module でない小さな script。module の script が動かなくても、こちらは動くかを確かめる -->
     <script>
       try {
-        google.script.run.recordFact('W2', '', 'classic', '動いた', '');
+        // ビルドの印は、埋め込みの JSON から読む
+        var build = '';
+        try {
+          build = JSON.parse(document.getElementById('embedded').textContent).build || '';
+        } catch (e) {
+          build = '';
+        }
+        google.script.run.recordFact('W2', '', 'classic', '動いた', '{}', build);
       } catch (e) {
         // 送れなければ、行が来ない
       }

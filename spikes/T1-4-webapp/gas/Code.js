@@ -48,33 +48,54 @@ function logSheet_() {
   let sh = ss.getSheetByName(SHEET.log);
   if (sh) return sh;
   sh = ss.insertSheet(SHEET.log);
-  sh.getRange('A:G').setNumberFormat('@');
-  sh.getRange(1, 1, 1, 6).setValues([['日時', 'シナリオ', '開き方', '事実', '値', '詳細']]);
+  sh.getRange('A:H').setNumberFormat('@');
+  sh.getRange(1, 1, 1, 7).setValues([
+    ['日時', 'シナリオ', '開き方', '事実', '値', '詳細', 'ビルドの印'],
+  ]);
   sh.setFrozenRows(1);
   return sh;
 }
 
-// 1つの事実ごとに1行。値と詳細は、メールアドレスと URL を伏せてから書く
-function log_(scenario, origin, fact, value, detail) {
-  const sh = logSheet_();
-  const row = [
+// 行を LockService で順番にして書く。1行なら appendRow、複数行なら 1 回の setValues。
+// 値を書く前に、列全体を「書式なしテキスト」にする（= で始まる値も数式にならない）
+function writeRows_(rows) {
+  const lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    const sh = logSheet_();
+    sh.getRange('A:G').setNumberFormat('@');
+    if (rows.length === 1) {
+      sh.appendRow(rows[0]);
+    } else if (rows.length > 1) {
+      sh.getRange(sh.getLastRow() + 1, 1, rows.length, 7).setValues(rows);
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// 1つの事実の行。値と詳細は、メールアドレスと URL を伏せてから書く
+function makeRow_(scenario, origin, fact, value, detail, build) {
+  return [
     now_(),
     String(scenario || ''),
     String(origin || ''),
     String(fact || ''),
-    scrubText_(value).slice(0, 1500),
-    scrubText_(detail).slice(0, 1500),
+    scrubText_(value).slice(0, MAX_TEXT),
+    scrubText_(detail).slice(0, MAX_TEXT),
+    String(build || ''),
   ];
-  // 値を書く前に、列全体を「書式なしテキスト」にする（= で始まる値も数式にならない）
-  sh.getRange('A:G').setNumberFormat('@');
-  sh.appendRow(row);
+}
+
+function log_(scenario, origin, fact, value, detail, build) {
+  writeRows_([makeRow_(scenario, origin, fact, value, detail, build)]);
 }
 
 function readRows_() {
   const sh = ss_().getSheetByName(SHEET.log);
   if (!sh || sh.getLastRow() < 2) return [];
   return sh
-    .getRange(2, 1, sh.getLastRow() - 1, 6)
+    .getRange(2, 1, sh.getLastRow() - 1, 7)
     .getValues()
     .map(function (r) {
       return {
@@ -84,17 +105,19 @@ function readRows_() {
         fact: String(r[3]),
         value: String(r[4]),
         detail: String(r[5]),
+        build: String(r[6]),
       };
     });
 }
 
-// 実行する人が持ち主か、シートを読めたか、書けたか。メールアドレスは返さない
-function execFacts_() {
-  const out = { kind: 'other', effectiveIsOwner: false, read: false, wrote: false };
+// 実行する人が持ち主か、シートを読めたか、書けたか。メールアドレスは返さない。
+// via は画面が URL の引数から読んだ入口（exec、dev、none）。getUrl() の種類は別に出す
+function execFacts_(via) {
+  const out = { via: via, urlKind: 'other', effectiveIsOwner: false, read: false, wrote: false };
   try {
-    out.kind = classifyUrl_(ScriptApp.getService().getUrl()).kind;
+    out.urlKind = classifyUrl_(ScriptApp.getService().getUrl()).kind;
   } catch (err) {
-    out.kind = 'other';
+    out.urlKind = 'other';
   }
   try {
     const effective = String(Session.getEffectiveUser().getEmail() || '').toLowerCase();
@@ -121,15 +144,6 @@ function execFacts_() {
 
 function errorText_(err) {
   return maskDigits_((err && err.message) || err).slice(0, 200);
-}
-
-// ログに書けなくても、画面は返す
-function tryLog_(scenario, origin, fact, value, detail) {
-  try {
-    log_(scenario, origin, fact, value, detail);
-  } catch (err) {
-    // 準備の前など。書けないことは画面の配信を止めない
-  }
 }
 
 function isString_(v) {
@@ -159,7 +173,7 @@ function menuMark() {
   const ui = SpreadsheetApp.getUi();
   const res = ui.prompt('区切りの名前（例: iPhone Safari の前）', ui.ButtonSet.OK_CANCEL);
   if (res.getSelectedButton() !== ui.Button.OK) return;
-  log_('', '', 'mark', res.getResponseText(), '');
+  log_('', '', 'mark', res.getResponseText(), '', '');
 }
 
 function menuSummarize() {
@@ -172,8 +186,9 @@ function menuSummarize() {
   Object.keys(out).forEach(function (k) {
     const r = out[k];
     const extra = {};
-    if (r.table !== undefined) extra.table = r.table;
-    if (r.embedRequired !== undefined) extra.embedRequired = r.embedRequired;
+    Object.keys(r).forEach(function (key) {
+      if (['verdict', 'evidence', 'impact', 'pending'].indexOf(key) < 0) extra[key] = r[key];
+    });
     table.push([
       k,
       SCENARIOS[k] || '',
@@ -190,9 +205,11 @@ function menuSummarize() {
 
 // 調べる画面を返す。Page.html は make-page.mjs が作る（Vite の出力 1 ファイル）
 function doGet(e) {
-  let html = HtmlService.createHtmlOutputFromFile('Page').getContent();
-  const catalog = { sample: EMBED_SAMPLE, items: ['ダミー豆A', 'ダミー豆B'] };
-  html = embedCatalog_(html, PLACEHOLDER, JSON.stringify(catalog));
+  const page = HtmlService.createHtmlOutputFromFile('Page').getContent();
+  // ビルドの印。画面が行を送るときに送り返し、まとめは最新の印の行だけを使う
+  const build = hash8_(page);
+  const catalog = { sample: EMBED_SAMPLE, items: ['ダミー豆A', 'ダミー豆B'], build: build };
+  const html = embedCatalog_(page, PLACEHOLDER, JSON.stringify(catalog));
   const out = HtmlService.createHtmlOutput(html).setTitle(TITLE);
 
   const metaFacts = META_NAMES.map(function (name) {
@@ -211,40 +228,44 @@ function doGet(e) {
   }
 
   try {
-    metaFacts.forEach(function (m) {
-      log_('W5', '', 'meta', JSON.stringify(m), '');
+    // 行はまとめて1回で書く
+    const rows = metaFacts.map(function (m) {
+      return makeRow_('W5', '', 'meta', JSON.stringify(m), '', build);
     });
-    log_('W5', '', 'favicon', JSON.stringify(favicon), '');
-    log_('W6', '', 'exec', JSON.stringify(execFacts_()), 'doGet');
+    rows.push(makeRow_('W5', '', 'favicon', JSON.stringify(favicon), '', build));
+    rows.push(makeRow_('W6', '', 'exec', JSON.stringify(execFacts_('none')), 'doGet', build));
+    rows.push(makeRow_('', '', 'build', build, '', build));
+    writeRows_(rows);
   } catch (err) {
-    // ログに書けなくても、画面は返す
+    // ログに書けなくても（準備の前など）、画面は返す
   }
   return out;
 }
 
-// 調べる画面が、測ったことや控えを送る
-function recordFact(scenario, origin, fact, value, detail) {
-  const args = [scenario, origin, fact, value, detail];
-  for (let i = 0; i < args.length; i++) {
-    if (!isString_(args[i])) throw new Error('文字列でない値は書けない（' + (i + 1) + ' 番目）');
-  }
-  log_(scenario, origin, fact, value, detail);
+// 調べる画面が、測ったことや控えを送る。誰でも呼べるので、決めた一覧の値だけを受け付ける
+function recordFact(scenario, origin, fact, value, detail, build) {
+  const r = checkFact_(scenario, origin, fact, value, detail, build);
+  log_(r.scenario, r.origin, r.fact, r.value, r.detail, r.build);
   return 'ok';
 }
 
-// 調べる画面から呼び、実行する人とシートの読み書きを調べる（W6）
-function probeExec(origin) {
-  if (!isString_(origin)) throw new Error('開き方は文字列で渡す');
-  const facts = execFacts_();
-  const text = JSON.stringify(facts);
-  log_('W6', origin, 'exec', text, 'google.script.run');
+// 調べる画面から呼び、実行する人とシートの読み書きを調べる（W6）。via は画面が URL の引数から読んだ値
+function probeExec(origin, via, build) {
+  if (!isString_(origin) || !isString_(via) || !isString_(build)) {
+    throw new Error('文字列で渡す');
+  }
+  if (ORIGINS.indexOf(origin) < 0) throw new Error('決めた一覧にない開き方');
+  if (['exec', 'dev', 'none'].indexOf(via) < 0) throw new Error('via は exec、dev、none のどれか');
+  const text = JSON.stringify(execFacts_(via));
+  log_('W6', origin, 'exec', text, 'google.script.run', build.slice(0, MAX_FIELD));
   return text;
 }
 
 // 往復の時間を測るための JSON の文字列。大きさは 5、50、200（KB）だけ
 function getPayload(kb) {
-  if (typeof kb !== 'number' || PAYLOAD_KB.indexOf(kb) < 0)
+  if (typeof kb !== 'number' || PAYLOAD_KB.indexOf(kb) < 0) {
     throw new Error('大きさは 5、50、200 だけ');
+  }
   // {"pad":""} は 10 文字
   return '{"pad":"' + new Array(kb * 1024 - 9).join('x') + '"}';
 }

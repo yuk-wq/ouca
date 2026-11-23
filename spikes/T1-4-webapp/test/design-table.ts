@@ -33,22 +33,33 @@ export function designImpact(scenario: string, verdict: string): string {
   return hit.impact;
 }
 
-// 開き方の一覧（DESIGN.md §2 の箇条書きの文言そのまま）
-export const ORIGIN_LIST: string[] = (() => {
-  const list = section.split('開き方の一覧')[1]!.split('\n\n')[1]!;
-  return list
+// 開き方の一覧（DESIGN.md §2 の表の1列目の文言そのまま。2列目が「お客さん」の印）
+const originRows = (() => {
+  const table = section.split('開き方の一覧')[1]!.split('\n\n')[1]!;
+  return table
     .split('\n')
-    .filter((l) => l.startsWith('- '))
-    .map((l) => l.slice(2).trim());
+    .filter((l) => l.startsWith('|'))
+    .map((l) =>
+      l
+        .split('|')
+        .slice(1, -1)
+        .map((c) => c.trim()),
+    )
+    .filter((c) => c[0] !== '開き方' && !/^-+$/.test(c[0]!));
 })();
+export const ORIGIN_LIST: string[] = originRows.map((c) => c[0]!);
+export const CUSTOMER_LIST: string[] = originRows
+  .filter((c) => c[1] === 'お客さん')
+  .map((c) => c[0]!);
 
 export const O = {
   pcA: ORIGIN_LIST[0]!,
-  pcAB: ORIGIN_LIST[1]!,
-  pcB: ORIGIN_LIST[2]!,
+  pcB: ORIGIN_LIST[1]!,
+  pcBA: ORIGIN_LIST[2]!,
   pcIncog: ORIGIN_LIST[3]!,
   iphoneSafari: ORIGIN_LIST[4]!,
   iphoneLine: ORIGIN_LIST[5]!,
-  androidChrome: ORIGIN_LIST[6]!,
-  androidLine: ORIGIN_LIST[7]!,
+  iphoneHome: ORIGIN_LIST[6]!,
+  androidChrome: ORIGIN_LIST[7]!,
+  androidLine: ORIGIN_LIST[8]!,
 };
