@@ -1,12 +1,17 @@
 import { render } from 'preact';
 import { useEffect, useState } from 'preact/hooks';
 import {
+  ACCOUNT_CHOICES,
+  INITIAL_ACCOUNT,
   INITIAL_ORIGIN,
   ORIGIN_CHOICES,
+  buildOf,
   canProbe,
+  canSendAccount,
   cannotopenFact,
   detectVisitKind,
   embedFact,
+  isPhoneOrigin,
   moduleFact,
   nextVisit,
   noteFact,
@@ -65,8 +70,8 @@ function loadVia(): Promise<Via> {
 
 // 開いた時点で、最初に module の行を送る（保存や sessionStorage に触る前）。
 // 埋め込みの確かめがその次。ビルドの印は、埋め込みの JSON から読んで送り返す
-const embedded = readEmbedded(document) as { build?: unknown } | null;
-const build = embedded && typeof embedded.build === 'string' ? embedded.build : '';
+const embedded = readEmbedded(document);
+const build = buildOf(document);
 const ua = navigator.userAgent;
 const sendRow = (fact: Fact, origin: string) => sendFact(toRow(fact, origin, build, ua));
 
@@ -128,7 +133,7 @@ function App() {
   const [probed, setProbed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [homeicon, setHomeicon] = useState('');
-  const [account, setAccount] = useState('なし');
+  const [account, setAccount] = useState(INITIAL_ACCOUNT);
   const [cannotOrigin, setCannotOrigin] = useState(INITIAL_ORIGIN);
   const [cannotState, setCannotState] = useState<'cannot' | 'failed'>('cannot');
   const [cannotText, setCannotText] = useState('');
@@ -138,6 +143,8 @@ function App() {
   }, []);
   const notice = via === null ? '' : viaNotice(via);
   const ready = canProbe(origin);
+  // via を読み終える前（null の間）は、調べられない
+  const viaReady = via !== null;
 
   async function probe() {
     setBusy(true);
@@ -210,7 +217,7 @@ function App() {
         どこから開いたか <OriginSelect value={origin} disabled={probed} onChange={setOrigin} />
       </p>
       <p>
-        <button disabled={busy || probed || !ready} onClick={probe}>
+        <button disabled={busy || probed || !ready || !viaReady} onClick={probe}>
           調べる（1回の読み込みにつき1回）
         </button>{' '}
         <button disabled={busy || !ready} onClick={rtt}>
@@ -227,17 +234,26 @@ function App() {
           いいえ
         </button>
       </p>
-      <p>
-        スマホのこのブラウザでログインしているアカウント{' '}
-        <select value={account} onChange={(e) => setAccount((e.target as HTMLSelectElement).value)}>
-          {['なし', 'A', 'B', 'ほか'].map((a) => (
-            <option value={a}>{a}</option>
-          ))}
-        </select>{' '}
-        <button disabled={!ready} onClick={() => note(noteFact('user.account', account))}>
-          送る
-        </button>
-      </p>
+      {isPhoneOrigin(origin) && (
+        <p>
+          このブラウザでログインしているアカウント{' '}
+          <select
+            value={account}
+            onChange={(e) => setAccount((e.target as HTMLSelectElement).value)}
+          >
+            <option value="">選んでください</option>
+            {ACCOUNT_CHOICES.map((a) => (
+              <option value={a}>{a}</option>
+            ))}
+          </select>{' '}
+          <button
+            disabled={!canSendAccount(origin, account)}
+            onClick={() => note(noteFact('user.account', account))}
+          >
+            送る
+          </button>
+        </p>
+      )}
       <p>
         ホーム画面に追加したときのアイコン{' '}
         <input

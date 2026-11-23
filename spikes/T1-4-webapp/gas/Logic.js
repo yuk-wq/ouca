@@ -5,6 +5,12 @@
 // HTML の中でメニューの JSON を入れる位置に置く目印の文字列
 const PLACEHOLDER = '__OUCA_T14_EMBED__';
 
+// ビルドの印を入れる位置の目印（メニューの JSON とは別の meta。JSON が壊れても、印は読める）
+const BUILD_PLACEHOLDER = '__OUCA_T14_BUILD__';
+
+// サーバーのコードの版。コードを直したら、ここも変える（ビルドの印に混ぜる）
+const SERVER_VERSION = 'T14-server-2';
+
 // doGet が addMetaTag を試す名前
 const META_NAMES = [
   'viewport',
@@ -174,7 +180,7 @@ function checkFact_(scenario, origin, fact, value, detail, build) {
   if (scenario.length > MAX_FIELD || SCENARIO_IDS.indexOf(scenario) < 0) {
     throw new Error('決めた一覧にないシナリオ');
   }
-  if (origin !== '' && (origin.length > MAX_FIELD * 2 || ORIGINS.indexOf(origin) < 0)) {
+  if (origin !== '' && (origin.length > MAX_FIELD || ORIGINS.indexOf(origin) < 0)) {
     throw new Error('決めた一覧にない開き方');
   }
   if (fact.length > MAX_FIELD || FACT_NAMES.indexOf(fact) < 0) {
@@ -337,6 +343,30 @@ function currentBuildRows_(rows) {
   });
 }
 
+// まとめの先頭に出す、使った印と、外した行の数（印ごと）
+function buildReport_(rows) {
+  rows = rows || [];
+  const b = lastRow_(rows, 'build');
+  if (!b) return { used: '', excluded: [] };
+  const used = String(b.value);
+  const order = [];
+  const counts = {};
+  rows.forEach(function (r) {
+    if (r.build === used) return;
+    if (!(r.build in counts)) {
+      counts[r.build] = 0;
+      order.push(r.build);
+    }
+    counts[r.build]++;
+  });
+  return {
+    used: used,
+    excluded: order.map(function (k) {
+      return { build: k, count: counts[k] };
+    }),
+  };
+}
+
 function summarizeW1_(rows) {
   const r = lastRow_(rows, 'embed');
   if (!r) return undecided_('', '足りない事実: embed');
@@ -435,11 +465,25 @@ function summarizeW3_(rows) {
 // 保存の1つのセル。list は、その開き方と保存の種類の /exec の行（詳細を parse したもの）
 function storageCell_(list, kind) {
   if (kind === 'unknown') {
-    return list.some(function (x) {
+    const any = list.some(function (x) {
       return x.d.kind === 'unknown';
-    })
-      ? '見分けられない'
-      : '確かめていない';
+    });
+    if (!any) return '確かめていない';
+    const rest = list.slice(1).filter(function (x) {
+      return x.d.kind === 'unknown';
+    });
+    if (rest.length === 0) return '見分けられない（確かめた回なし）';
+    if (
+      rest.some(function (x) {
+        return x.v.wrote === false;
+      })
+    ) {
+      return '見分けられない（書けなかった）';
+    }
+    const kept = rest.filter(function (x) {
+      return x.v.had === true;
+    }).length;
+    return '見分けられない（残った ' + kept + '/' + rest.length + '）';
   }
   // 最初の訪問は、前の値がないのが当たり前なので数えない
   const sub = list.slice(1).filter(function (x) {
@@ -670,6 +714,7 @@ function summarizeW9_(rows) {
   });
   // A（持ち主）でログインしたスマホの行は、お客さんの判定に数えない
   const excluded = CUSTOMER_ORIGINS.filter(function (o) {
+    if (PHONE_ORIGINS.indexOf(o) < 0) return false;
     const a = lastRow_(rows, 'user.account', atOrigin_(o));
     return !!a && a.value === 'A';
   });
@@ -682,6 +727,14 @@ function summarizeW9_(rows) {
   const unchecked = counted.filter(function (o) {
     return st[o] === '確かめていない';
   });
+  // アカウントの控えがないスマホの開き方（開けたもの）も、根拠に並べる
+  const noAccount = counted.filter(function (o) {
+    return (
+      PHONE_ORIGINS.indexOf(o) >= 0 &&
+      st[o] === '開けた' &&
+      !lastRow_(rows, 'user.account', atOrigin_(o))
+    );
+  });
   const evidence =
     '開けなかった=[' +
     failed.join('、') +
@@ -689,6 +742,8 @@ function summarizeW9_(rows) {
     unchecked.join('、') +
     ']、A でログインしたため数えない=[' +
     excluded.join('、') +
+    ']、アカウントの控えがない=[' +
+    noAccount.join('、') +
     ']';
   if (failed.length > 0) return decided_('W9', '案内が要る', evidence);
   const pcOk = counted.indexOf(ORIGIN_PC_B_A) >= 0 && st[ORIGIN_PC_B_A] === '開けた';

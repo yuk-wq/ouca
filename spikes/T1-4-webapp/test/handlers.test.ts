@@ -10,10 +10,14 @@ function setup(opts: Opts = {}, prepared = true) {
   const w = createWorld(opts);
   const g = w.load();
   const placeholder = vm.runInContext('PLACEHOLDER', g) as string;
-  w.opts.pageHtml = `<html><script type="application/json" id="embed">${placeholder}</script></html>`;
+  const buildPlaceholder = vm.runInContext('BUILD_PLACEHOLDER', g) as string;
+  // Page.html の代わり。メニューの JSON の目印と、ビルドの印の目印（別の meta）を持つ
+  const page = (tag = '') =>
+    `<html>${tag}<meta name="t14-build" content="${buildPlaceholder}"><script type="application/json" id="embed">${placeholder}</script></html>`;
+  w.opts.pageHtml = page();
   if (prepared) g.menuSetup();
   w.calls.length = 0;
-  return { w, g, placeholder };
+  return { w, g, placeholder, buildPlaceholder, page };
 }
 // ログの行を { scenario, origin, fact, value, detail, build } にする
 // （列は日時、シナリオ、開き方、事実、値、詳細、ビルドの印）
@@ -130,22 +134,33 @@ describe('doGet', () => {
     expect(write).toBeGreaterThan(wait);
     expect(release).toBeGreaterThan(write);
   });
-  it('ビルドの印（Page.html のハッシュ）を、画面に埋め、build の行と、書いた行すべての印の列に書く', () => {
-    const { w, g } = setup();
+  it('ビルドの印を、メニューの JSON とは別の meta に埋め、build の行と、書いた行すべての印の列に書く', () => {
+    const { w, g, buildPlaceholder } = setup();
     g.doGet({});
-    const catalog = JSON.parse(
-      (w.outputs[0].html as string).split('id="embed">')[1]!.split('</script>')[0]!,
-    );
-    expect(catalog.build).toMatch(/^[0-9a-f]{8}$/);
+    const html: string = w.outputs[0].html;
+    expect(html).not.toContain(buildPlaceholder);
+    const mark = /<meta name="t14-build" content="([0-9a-f]{8})">/.exec(html)?.[1];
+    expect(mark).toBeTruthy();
     const buildRows = byFact(w, 'build');
     expect(buildRows).toHaveLength(1);
-    expect(buildRows[0].value).toBe(catalog.build);
-    for (const r of rowsOf(w)) expect(r.build).toBe(catalog.build);
+    expect(buildRows[0].value).toBe(mark);
+    for (const r of rowsOf(w)) expect(r.build).toBe(mark);
+    // メニューの JSON の中には、印を入れない（JSON が壊れても、印は meta から読める）
+    const json = html.split('id="embed">')[1]!.split('</script>')[0]!;
+    expect(json).not.toContain(mark);
+  });
+  it('ビルドの印は、Page.html とサーバーのコードの版（SERVER_VERSION）を合わせたハッシュ', () => {
+    const { w, g } = setup();
+    const version = vm.runInContext('SERVER_VERSION', g) as string;
+    expect(typeof version).toBe('string');
+    expect(version).not.toBe('');
+    g.doGet({});
+    expect(byFact(w, 'build')[0].value).toBe(g.hash8_(w.opts.pageHtml + version));
   });
   it('Page.html が違えばビルドの印も違い、同じなら同じ', () => {
-    const buildOf = (suffix: string) => {
-      const { w, g, placeholder } = setup();
-      w.opts.pageHtml = `<html>${suffix}<script type="application/json" id="embed">${placeholder}</script></html>`;
+    const buildOf = (tag: string) => {
+      const { w, g, page } = setup();
+      w.opts.pageHtml = page(tag);
       g.doGet({});
       return byFact(w, 'build')[0].value;
     };
@@ -230,6 +245,21 @@ describe('recordFact（画面から呼ぶ）', () => {
     expect(() => call(g, 'W1', '', 'evil', 'x', '', 'b1')).toThrow();
     expect(() => call(g, 'W1', '', 'user.admin', 'x', '', 'b1')).toThrow();
     expect(rowsOf(w)).toHaveLength(0);
+  });
+  it('exec と build の事実は、recordFact では書けない（サーバーだけが書く）', () => {
+    const { w, g } = setup();
+    expect(() => call(g, 'W6', O.pcB, 'exec', '{}', '', 'b1')).toThrow();
+    expect(() => call(g, '', '', 'build', 'x', '', 'b1')).toThrow();
+    expect(rowsOf(w)).toHaveLength(0);
+  });
+  it('開き方は 100 字までで、101 字の開き方は断る', () => {
+    const { g } = setup();
+    expect(() => call(g, 'W3', 'あ'.repeat(101), 'viewport', '{}', '', 'b1')).toThrow();
+  });
+  it('ビルドの印は 100 字で切る', () => {
+    const { w, g } = setup();
+    call(g, 'W3', O.iphoneSafari, 'viewport', '{}', '', 'x'.repeat(150));
+    expect(rowsOf(w)[0].build).toHaveLength(100);
   });
   it('値と詳細は 1500 字で切る', () => {
     const { w, g } = setup();
@@ -368,9 +398,9 @@ describe('menuSummarize', () => {
     expect(w.formulaCells).toEqual([]);
   });
   it('最新のビルドの印（doGet が書いた build の行）の行だけを使う。古い行は使わない', () => {
-    const { w, g, placeholder } = setup();
+    const { w, g, page } = setup();
     const doGetWith = (tag: string) => {
-      w.opts.pageHtml = `<html>${tag}<script type="application/json" id="embed">${placeholder}</script></html>`;
+      w.opts.pageHtml = page(tag);
       g.doGet({});
       const builds = byFact(w, 'build');
       return builds[builds.length - 1].value as string;
@@ -383,5 +413,23 @@ describe('menuSummarize', () => {
     const sh = w.sheetOf(SUMMARY);
     const rows = sh.getRange(1, 1, sh.getLastRow(), 6).getValues() as string[][];
     expect(rows.find((r) => r[0] === 'W1')![2]).toBe('読める');
+  });
+  it('まとめの先頭に、使った印と、外した行の数とその印を出す', () => {
+    const { w, g, page } = setup();
+    const doGetWith = (tag: string) => {
+      w.opts.pageHtml = page(tag);
+      g.doGet({});
+      const builds = byFact(w, 'build');
+      return builds[builds.length - 1].value as string;
+    };
+    const oldBuild = doGetWith('old');
+    g.recordFact('W1', '', 'embed', '{"read":true,"same":false}', '', oldBuild);
+    const newBuild = doGetWith('new');
+    g.menuSummarize();
+    const sh = w.sheetOf(SUMMARY);
+    const head = JSON.stringify(sh.getRange(1, 1, 2, 7).getValues());
+    expect(head).toContain(newBuild);
+    expect(head).toContain(oldBuild);
+    expect(head).toContain('外した');
   });
 });

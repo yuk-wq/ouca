@@ -182,7 +182,23 @@ function menuSummarize() {
   const sh = ss.getSheetByName(SHEET.summary) || ss.insertSheet(SHEET.summary);
   sh.clearContents();
   sh.getRange('A:G').setNumberFormat('@');
-  const table = [['シナリオ', '名前', '判定', '根拠', '設計への影響', '未確定の理由', '表']];
+  // 先頭に、使った印と、外した行の数とその印を出す
+  const rep = buildReport_(readRows_());
+  const excluded = rep.excluded.map(function (x) {
+    return (x.build || '(印なし)') + '=' + x.count + '行';
+  });
+  const table = [
+    [
+      '使ったビルドの印',
+      rep.used || '(build の行なし。全部の行を使った)',
+      '外した行',
+      excluded.length > 0 ? excluded.join('、') : 'なし',
+      '',
+      '',
+      '',
+    ],
+    ['シナリオ', '名前', '判定', '根拠', '設計への影響', '未確定の理由', '表'],
+  ];
   Object.keys(out).forEach(function (k) {
     const r = out[k];
     const extra = {};
@@ -206,10 +222,16 @@ function menuSummarize() {
 // 調べる画面を返す。Page.html は make-page.mjs が作る（Vite の出力 1 ファイル）
 function doGet(e) {
   const page = HtmlService.createHtmlOutputFromFile('Page').getContent();
-  // ビルドの印。画面が行を送るときに送り返し、まとめは最新の印の行だけを使う
-  const build = hash8_(page);
-  const catalog = { sample: EMBED_SAMPLE, items: ['ダミー豆A', 'ダミー豆B'], build: build };
-  const html = embedCatalog_(page, PLACEHOLDER, JSON.stringify(catalog));
+  // ビルドの印。画面が行を送るときに送り返し、まとめは最新の印の行だけを使う。
+  // Page.html とサーバーのコードの版を合わせたハッシュにする
+  const build = hash8_(page + SERVER_VERSION);
+  const catalog = { sample: EMBED_SAMPLE, items: ['ダミー豆A', 'ダミー豆B'] };
+  // ビルドの印は、メニューの JSON とは別の meta に埋める（JSON が壊れても、画面は印を読める）
+  const html = embedCatalog_(
+    embedCatalog_(page, BUILD_PLACEHOLDER, build),
+    PLACEHOLDER,
+    JSON.stringify(catalog),
+  );
   const out = HtmlService.createHtmlOutput(html).setTitle(TITLE);
 
   const metaFacts = META_NAMES.map(function (name) {

@@ -23,6 +23,19 @@ export function canProbe(origin: string): boolean {
   return ORIGIN_CHOICES.indexOf(origin) >= 0;
 }
 
+// スマホの開き方（DESIGN.md §2 の一覧のうち、iPhone と Android の5つ）。アカウントの控えを送る開き方
+export function isPhoneOrigin(origin: string): boolean {
+  return ORIGIN_CHOICES.indexOf(origin) >= 4 && ORIGIN_CHOICES.indexOf(origin) <= 8;
+}
+
+// そのブラウザでログインしているアカウントの選択肢。初めは何も選ばれず、選ぶまで送れない
+export const ACCOUNT_CHOICES = ['なし', 'A', 'B', 'ほか'];
+export const INITIAL_ACCOUNT = '';
+
+export function canSendAccount(origin: string, answer: string): boolean {
+  return isPhoneOrigin(origin) && ACCOUNT_CHOICES.indexOf(answer) >= 0;
+}
+
 export interface ScriptHolder {
   querySelector(selector: string): { textContent: string | null } | null;
 }
@@ -35,6 +48,20 @@ export function readEmbedded(doc: ScriptHolder): unknown {
     return JSON.parse(el.textContent);
   } catch {
     return null;
+  }
+}
+
+export interface MetaHolder {
+  querySelector(selector: string): { getAttribute(name: string): string | null } | null;
+}
+
+// <meta name="t14-build"> からビルドの印を読む。メニューの JSON が壊れていても読める。なければ空
+export function buildOf(doc: MetaHolder): string {
+  try {
+    const el = doc.querySelector('meta[name="t14-build"]');
+    return (el && el.getAttribute('content')) || '';
+  } catch {
+    return '';
   }
 }
 

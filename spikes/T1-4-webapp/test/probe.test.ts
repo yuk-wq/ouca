@@ -3,12 +3,17 @@
 import { describe, expect, it } from 'vitest';
 import {
   EMBED_SAMPLE,
+  ACCOUNT_CHOICES,
+  INITIAL_ACCOUNT,
   INITIAL_ORIGIN,
   ORIGIN_CHOICES,
+  buildOf,
   canProbe,
+  canSendAccount,
   cannotopenFact,
   detectVisitKind,
   embedFact,
+  isPhoneOrigin,
   moduleFact,
   nextVisit,
   noteFact,
@@ -61,6 +66,62 @@ describe('開き方の選択肢', () => {
     expect(canProbe(INITIAL_ORIGIN)).toBe(false);
     expect(canProbe('どこか')).toBe(false);
     for (const o of ORIGIN_LIST) expect(canProbe(o)).toBe(true);
+  });
+});
+
+describe('スマホの開き方とアカウントの控え', () => {
+  it('isPhoneOrigin は、スマホの5つの開き方だけ true', () => {
+    const phones = [O.iphoneSafari, O.iphoneLine, O.iphoneHome, O.androidChrome, O.androidLine];
+    for (const o of ORIGIN_LIST) expect(isPhoneOrigin(o), o).toBe(phones.includes(o));
+    expect(isPhoneOrigin('')).toBe(false);
+  });
+  it('アカウントの控えは、初めは何も選ばれず、選ぶまで、PC の開き方では送れない', () => {
+    expect(INITIAL_ACCOUNT).toBe('');
+    expect(ACCOUNT_CHOICES).toEqual(['なし', 'A', 'B', 'ほか']);
+    expect(canSendAccount(O.iphoneSafari, INITIAL_ACCOUNT)).toBe(false);
+    expect(canSendAccount(O.iphoneSafari, 'A')).toBe(true);
+    expect(canSendAccount(O.pcB, 'A')).toBe(false);
+    expect(canSendAccount('', 'A')).toBe(false);
+  });
+});
+
+describe('buildOf（ビルドの印を、メニューの JSON とは別の meta から読む）', () => {
+  type El = { textContent: string | null; getAttribute: (n: string) => string | null };
+  const doc = (json: string | null, build: string | null) => ({
+    querySelector: (sel: string): El | null => {
+      if (sel.includes('t14-build')) {
+        return build === null
+          ? null
+          : { textContent: null, getAttribute: (n) => (n === 'content' ? build : null) };
+      }
+      if (sel.includes('application/json')) {
+        return json === null ? null : { textContent: json, getAttribute: () => null };
+      }
+      return null;
+    },
+  });
+  it('meta から印を読む', () => {
+    expect(buildOf(doc('{}', 'abcd1234'))).toBe('abcd1234');
+  });
+  it('メニューの JSON が壊れていても、印を読める（JSON は読めず null）', () => {
+    const d = doc('{"a":', 'abcd1234');
+    expect(readEmbedded(d)).toBeNull();
+    expect(buildOf(d)).toBe('abcd1234');
+  });
+  it('meta がなければ空の文字列', () => {
+    expect(buildOf(doc('{}', null))).toBe('');
+  });
+  it('壊れた JSON の画面の行は、印がつき、summarize_ で W1「壊れる」、W2 が判定される', () => {
+    const d = doc('{"a":', 'b1');
+    const build = buildOf(d);
+    const rows = [
+      asRow(['', '', 'build', 'b1', '', 'b1']),
+      ...rowsFrom([[embedFact(readEmbedded(d)), '']]).map((r) => ({ ...r, build })),
+      asRow(['W2', '', 'classic', '動いた', '{}', build]),
+    ];
+    const out = sum(rows);
+    expect(out.W1.verdict).toBe('壊れる');
+    expect(out.W2.verdict).toBe('動かない');
   });
 });
 
@@ -343,7 +404,7 @@ describe('事実の行を作る関数と summarize_ のつながり（事実の�
       [storageFact('idb', v1, 'unknown', true, { hash: 'h', via: 'exec' }), O.androidLine],
     ]);
     const t = sum(rows).W4.table.find((x: any) => x.origin === O.androidLine);
-    expect(t.idb.unknown).toBe('見分けられない');
+    expect(t.idb.unknown).toBe('見分けられない（確かめた回なし）');
   });
   it('W6: readVia の結果を probeExec に渡すと、/exec の行の判定ができる', () => {
     const w = createWorld();
