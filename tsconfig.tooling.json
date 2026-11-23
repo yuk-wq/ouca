@@ -8,6 +8,7 @@
     "test/**/*.ts",
     "spikes/*/test/**/*.ts",
     "src/**/*.test.ts",
+    "spikes/*/test/**/*.ts",
     "vite.config.ts",
     "vitest.config.ts",
     "src/shared/*.ts"

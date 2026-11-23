@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=500" />
+    <title>T1-4 調べる画面</title>
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- 埋め込みの JSON。doGet が目印を置き換える -->
+    <script type="application/json" id="embedded">
+      __OUCA_T14_EMBED__
+    </script>
+    <!-- module でない小さな script。module の script が動かなくても、こちらは動くかを確かめる -->
+    <script>
+      try {
+        google.script.run.recordFact('W2', '', 'classic', '動いた', '');
+      } catch (e) {
+        // 送れなければ、行が来ない
+      }
+    </script>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
