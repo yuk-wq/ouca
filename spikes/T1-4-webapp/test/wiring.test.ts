@@ -90,9 +90,11 @@ describe('画面のつながり', () => {
     expect(main).toMatch(/canProbe\(/);
     expect(main).toMatch(/<button[^>]*disabled=\{[^}]*(ready|canProbe)/);
   });
-  it('via を読み終える前は「調べる」が押せない', () => {
+  it('「調べる」のボタンは、canStartProbe（開き方と via の両方を見る）で無効にする', () => {
     const main = stripComments(read('page/main.tsx'));
-    expect(main).toMatch(/via\s*===\s*null/);
+    expect(main).toMatch(/<button[^>]*disabled=\{[^}]*canStartProbe\(/);
+    expect(main).not.toMatch(/viaReady/);
+    expect(main).toMatch(/moduleFact\(buildSource\(/);
   });
   it('make-page.mjs は、ビルドの前に page/ の型の検査（tsc -p page）を動かす', () => {
     const make = read('make-page.mjs');
@@ -122,12 +124,15 @@ describe('make-page.mjs で作った Page.html', () => {
   it('ビルドの印の目印が、メニューの JSON の目印とは別に1つだけある', () => {
     const bp = vm.runInContext('BUILD_PLACEHOLDER', ctx) as string;
     expect(bp).not.toBe(vm.runInContext('PLACEHOLDER', ctx));
-    expect(html.split(bp)).toHaveLength(2);
+    // meta と、body の data-build の2か所
+    expect(html.split(bp)).toHaveLength(3);
+    expect(html).toMatch(/data-build=/);
     expect(html).toMatch(/<meta[^>]*name="t14-build"/);
   });
   it('module でない script は、ビルドの印を meta から読む（メニューの JSON は読まない）', () => {
     const m = /<script(?![^>]*\btype=)[^>]*>([\s\S]*?)<\/script>/.exec(html);
     expect(m![1]).toContain('t14-build');
+    expect(m![1]).toContain('data-build');
     expect(m![1]).not.toContain('JSON.parse');
   });
   it('module の script と、module でない小さな script が、両方入っている', () => {

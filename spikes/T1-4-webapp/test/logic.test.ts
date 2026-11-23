@@ -668,6 +668,13 @@ describe('summarize_ W9 開けないときの案内', () => {
     expect(r.evidence).toContain('アカウントの控えがない');
     expect(r.evidence).toContain(O.iphoneLine);
   });
+  it('アカウントの控えがない開き方の欄には、PC の開き方（開けたもの）を並べない', () => {
+    const r = sum([opened(O.pcB), opened(O.pcBA), opened(O.iphoneLine)]).W9;
+    const part = r.evidence.split('アカウントの控えがない')[1] ?? '';
+    expect(part).toContain(O.iphoneLine);
+    expect(part).not.toContain(O.pcB);
+    expect(part).not.toContain(O.pcBA);
+  });
   it('アカウントの控えがあるスマホの開き方は、「控えがない」の欄に並べない', () => {
     const rows = [opened(O.pcBA), opened(O.iphoneLine), account(O.iphoneLine, 'B')];
     const r = sum(rows).W9;

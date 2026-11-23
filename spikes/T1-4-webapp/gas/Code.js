@@ -226,12 +226,11 @@ function doGet(e) {
   // Page.html とサーバーのコードの版を合わせたハッシュにする
   const build = hash8_(page + SERVER_VERSION);
   const catalog = { sample: EMBED_SAMPLE, items: ['ダミー豆A', 'ダミー豆B'] };
-  // ビルドの印は、メニューの JSON とは別の meta に埋める（JSON が壊れても、画面は印を読める）
-  const html = embedCatalog_(
-    embedCatalog_(page, BUILD_PLACEHOLDER, build),
-    PLACEHOLDER,
-    JSON.stringify(catalog),
-  );
+  // ビルドの印は、メニューの JSON とは別の2か所（meta と、body の data-build）に埋める。
+  // JSON が壊れても、iframe の中で meta が取り除かれても、画面は印を読める
+  let html = embedCatalog_(page, BUILD_PLACEHOLDER, build);
+  html = embedCatalog_(html, BUILD_PLACEHOLDER, build);
+  html = embedCatalog_(html, PLACEHOLDER, JSON.stringify(catalog));
   const out = HtmlService.createHtmlOutput(html).setTitle(TITLE);
 
   const metaFacts = META_NAMES.map(function (name) {

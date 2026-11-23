@@ -13,7 +13,7 @@ function setup(opts: Opts = {}, prepared = true) {
   const buildPlaceholder = vm.runInContext('BUILD_PLACEHOLDER', g) as string;
   // Page.html の代わり。メニューの JSON の目印と、ビルドの印の目印（別の meta）を持つ
   const page = (tag = '') =>
-    `<html>${tag}<meta name="t14-build" content="${buildPlaceholder}"><script type="application/json" id="embed">${placeholder}</script></html>`;
+    `<html>${tag}<meta name="t14-build" content="${buildPlaceholder}"><body><div id="app" data-build="${buildPlaceholder}"></div><script type="application/json" id="embed">${placeholder}</script></html>`;
   w.opts.pageHtml = page();
   if (prepared) g.menuSetup();
   w.calls.length = 0;
@@ -141,6 +141,8 @@ describe('doGet', () => {
     expect(html).not.toContain(buildPlaceholder);
     const mark = /<meta name="t14-build" content="([0-9a-f]{8})">/.exec(html)?.[1];
     expect(mark).toBeTruthy();
+    // iframe の中で meta が取り除かれても読めるように、body の側（data-build）にも埋める
+    expect(/data-build="([0-9a-f]{8})"/.exec(html)?.[1]).toBe(mark);
     const buildRows = byFact(w, 'build');
     expect(buildRows).toHaveLength(1);
     expect(buildRows[0].value).toBe(mark);
