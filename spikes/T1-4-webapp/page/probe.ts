@@ -51,18 +51,46 @@ export function readEmbedded(doc: ScriptHolder): unknown {
   }
 }
 
-export interface MetaHolder {
+export interface BuildHolder {
   querySelector(selector: string): { getAttribute(name: string): string | null } | null;
 }
 
-// <meta name="t14-build"> からビルドの印を読む。メニューの JSON が壊れていても読める。なければ空
-export function buildOf(doc: MetaHolder): string {
+export type BuildFrom = 'meta' | 'body' | 'both' | 'none';
+
+function metaBuild(doc: BuildHolder): string {
   try {
     const el = doc.querySelector('meta[name="t14-build"]');
     return (el && el.getAttribute('content')) || '';
   } catch {
     return '';
   }
+}
+
+function bodyBuild(doc: BuildHolder): string {
+  try {
+    const el = doc.querySelector('[data-build]');
+    return (el && el.getAttribute('data-build')) || '';
+  } catch {
+    return '';
+  }
+}
+
+// ビルドの印を、<meta name="t14-build"> と、body の data-build の両方から探して読む（meta を優先）。
+// メニューの JSON が壊れていても、iframe の中で meta が取り除かれても読める。なければ空
+export function buildOf(doc: BuildHolder): string {
+  return metaBuild(doc) || bodyBuild(doc);
+}
+
+// 印を読めた場所
+export function buildSource(doc: BuildHolder): BuildFrom {
+  const m = metaBuild(doc) !== '';
+  const b = bodyBuild(doc) !== '';
+  return m && b ? 'both' : m ? 'meta' : b ? 'body' : 'none';
+}
+
+// 「調べる」を押せるか。開き方を選び、via を読み終えている（null でない）ときだけ
+export function canStartProbe(origin: string, via: Via | null): boolean {
+  return canProbe(origin) && via !== null;
 }
 
 export interface Visit {
@@ -190,8 +218,9 @@ export interface Fact {
   detail: Record<string, string>;
 }
 
-export function moduleFact(): Fact {
-  return { scenario: 'W2', fact: 'module', value: '動いた', detail: {} };
+// detail の buildFrom に、ビルドの印を読めた場所（meta、body、both、none）を入れる
+export function moduleFact(buildFrom: BuildFrom = 'none'): Fact {
+  return { scenario: 'W2', fact: 'module', value: '動いた', detail: { buildFrom } };
 }
 
 export function embedFact(embedded: unknown): Fact {

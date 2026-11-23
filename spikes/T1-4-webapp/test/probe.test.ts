@@ -9,7 +9,9 @@ import {
   ORIGIN_CHOICES,
   buildOf,
   canProbe,
+  buildSource,
   canSendAccount,
+  canStartProbe,
   cannotopenFact,
   detectVisitKind,
   embedFact,
@@ -85,14 +87,20 @@ describe('スマホの開き方とアカウントの控え', () => {
   });
 });
 
-describe('buildOf（ビルドの印を、メニューの JSON とは別の meta から読む）', () => {
+describe('buildOf と buildSource（ビルドの印を、meta と body の data-build の両方から読む）', () => {
   type El = { textContent: string | null; getAttribute: (n: string) => string | null };
-  const doc = (json: string | null, build: string | null) => ({
+  // meta と body の側を、それぞれ null にできる（iframe の中で meta が取り除かれる場合を作る）
+  const doc = (json: string | null, meta: string | null, body: string | null = null) => ({
     querySelector: (sel: string): El | null => {
       if (sel.includes('t14-build')) {
-        return build === null
+        return meta === null
           ? null
-          : { textContent: null, getAttribute: (n) => (n === 'content' ? build : null) };
+          : { textContent: null, getAttribute: (n) => (n === 'content' ? meta : null) };
+      }
+      if (sel.includes('data-build')) {
+        return body === null
+          ? null
+          : { textContent: null, getAttribute: (n) => (n === 'data-build' ? body : null) };
       }
       if (sel.includes('application/json')) {
         return json === null ? null : { textContent: json, getAttribute: () => null };
@@ -102,17 +110,33 @@ describe('buildOf（ビルドの印を、メニューの JSON とは別の meta 
   });
   it('meta から印を読む', () => {
     expect(buildOf(doc('{}', 'abcd1234'))).toBe('abcd1234');
+    expect(buildSource(doc('{}', 'abcd1234'))).toBe('meta');
+  });
+  it('meta が取り除かれていて、body の data-build だけにあっても、印を読める', () => {
+    expect(buildOf(doc('{}', null, 'abcd1234'))).toBe('abcd1234');
+    expect(buildSource(doc('{}', null, 'abcd1234'))).toBe('body');
+  });
+  it('両方にあれば both で、印を読める', () => {
+    expect(buildOf(doc('{}', 'abcd1234', 'abcd1234'))).toBe('abcd1234');
+    expect(buildSource(doc('{}', 'abcd1234', 'abcd1234'))).toBe('both');
   });
   it('メニューの JSON が壊れていても、印を読める（JSON は読めず null）', () => {
     const d = doc('{"a":', 'abcd1234');
     expect(readEmbedded(d)).toBeNull();
     expect(buildOf(d)).toBe('abcd1234');
   });
-  it('meta がなければ空の文字列', () => {
-    expect(buildOf(doc('{}', null))).toBe('');
+  it('どちらにもなければ空の文字列で、読めた場所は none', () => {
+    expect(buildOf(doc('{}', null, null))).toBe('');
+    expect(buildSource(doc('{}', null, null))).toBe('none');
+  });
+  it('module の行の詳細に、印を読めた場所が入る', () => {
+    for (const from of ['meta', 'body', 'both', 'none'] as const) {
+      const t = toRow(moduleFact(from), '', 'b1', UA);
+      expect(JSON.parse(t[4]!).buildFrom).toBe(from);
+    }
   });
   it('壊れた JSON の画面の行は、印がつき、summarize_ で W1「壊れる」、W2 が判定される', () => {
-    const d = doc('{"a":', 'b1');
+    const d = doc('{"a":', null, 'b1');
     const build = buildOf(d);
     const rows = [
       asRow(['', '', 'build', 'b1', '', 'b1']),
@@ -122,6 +146,21 @@ describe('buildOf（ビルドの印を、メニューの JSON とは別の meta 
     const out = sum(rows);
     expect(out.W1.verdict).toBe('壊れる');
     expect(out.W2.verdict).toBe('動かない');
+  });
+});
+
+describe('canStartProbe（「調べる」を押せるか）', () => {
+  it('開き方を選び、via を読み終えているときだけ true', () => {
+    expect(canStartProbe(O.pcB, 'exec')).toBe(true);
+    expect(canStartProbe(O.pcB, 'dev')).toBe(true);
+    expect(canStartProbe(O.pcB, 'none')).toBe(true);
+  });
+  it('開き方が空、一覧にない値なら false', () => {
+    expect(canStartProbe('', 'exec')).toBe(false);
+    expect(canStartProbe('どこか', 'exec')).toBe(false);
+  });
+  it('via を読み終える前（null）は false', () => {
+    expect(canStartProbe(O.pcB, null)).toBe(false);
   });
 });
 

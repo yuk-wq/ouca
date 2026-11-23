@@ -6,6 +6,8 @@ import {
   INITIAL_ORIGIN,
   ORIGIN_CHOICES,
   buildOf,
+  buildSource,
+  canStartProbe,
   canProbe,
   canSendAccount,
   cannotopenFact,
@@ -77,7 +79,7 @@ const sendRow = (fact: Fact, origin: string) => sendFact(toRow(fact, origin, bui
 
 const startup: Promise<VisitKind> = (async () => {
   try {
-    await sendRow(moduleFact(), '');
+    await sendRow(moduleFact(buildSource(document)), '');
     await sendRow(embedFact(embedded), '');
   } catch {
     // 送れなければ、行が来ない
@@ -143,8 +145,6 @@ function App() {
   }, []);
   const notice = via === null ? '' : viaNotice(via);
   const ready = canProbe(origin);
-  // via を読み終える前（null の間）は、調べられない
-  const viaReady = via !== null;
 
   async function probe() {
     setBusy(true);
@@ -217,7 +217,7 @@ function App() {
         どこから開いたか <OriginSelect value={origin} disabled={probed} onChange={setOrigin} />
       </p>
       <p>
-        <button disabled={busy || probed || !ready || !viaReady} onClick={probe}>
+        <button disabled={busy || probed || !canStartProbe(origin, via)} onClick={probe}>
           調べる（1回の読み込みにつき1回）
         </button>{' '}
         <button disabled={busy || !ready} onClick={rtt}>
