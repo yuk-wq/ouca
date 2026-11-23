@@ -11,7 +11,7 @@ const { version } = JSON.parse(
 export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(version) },
   test: {
-    include: ['src/**/*.test.ts', 'test/**/*.test.ts'],
+    include: ['src/**/*.test.ts', 'test/**/*.test.ts', 'spikes/*/test/**/*.test.ts'],
     globalSetup: ['test/global-setup.ts'],
   },
 });
