@@ -473,6 +473,38 @@ describe('S01: D2 の入力規則を Apps Script が読めないとき（chip �
   });
 });
 
+describe('まとめのタブと、F2、ms.d2.value', () => {
+  it('まとめの名前の列に、rebuild などの英語を出さず、シナリオの列は S と2桁の数字だけ', () => {
+    const { w, g } = setup();
+    g.menuOwnerCheck();
+    g.menuSummarize();
+    const sh = w.sheetOf('T1-3 まとめ');
+    const names: string[] = [];
+    const scenarios: string[] = [];
+    for (let r = 2; sh.getRange(r, 1).getValue() !== ''; r++) {
+      scenarios.push(String(sh.getRange(r, 1).getValue()));
+      names.push(String(sh.getRange(r, 2).getValue()));
+    }
+    expect(names.length).toBeGreaterThan(15);
+    for (const n of names) expect(n).not.toMatch(/rebuild|underscore|timer/i);
+    for (const sc of scenarios) expect(sc).toMatch(/^S\d\d$/);
+    expect(names.some((n) => n.includes('作り直し'))).toBe(true);
+  });
+  it('複数選択: Apps Script で設定を試すと、F2 にも1つ選ぶ形のプルダウンが置かれる', () => {
+    const { w, g } = setup();
+    w.sheetOf(BEANS).getRange('F2').clearDataValidations();
+    g.menuMultiSelect();
+    expect(w.sheetOf(BEANS).getRange('F2').getDataValidation()).not.toBeNull();
+  });
+  it('ms.d2.value の値は getValue=…|getDisplayValue=… の形', () => {
+    const { w, g } = setup();
+    g.menuMultiSelect();
+    w.sheetOf(BEANS).getRange('D2').setValue('果実');
+    g.menuMultiInspect();
+    expect(byFact(w, 'ms.d2.value')[0].value).toBe('getValue=果実|getDisplayValue=果実');
+  });
+});
+
 describe('S04: 候補の自動更新は、F2 のセルで確かめる', () => {
   it('D2 の入力規則がなくても（準備だけ）、候補を足すと list.inRange が true で、まとめは「出る」', () => {
     const { w, g } = setup();

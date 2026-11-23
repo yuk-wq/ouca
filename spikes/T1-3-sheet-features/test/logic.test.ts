@@ -513,6 +513,11 @@ describe('summarize_ S01 複数選択', () => {
     expect(out.S01.verdict).toBe('手でもオンにできない');
     expect(out.S01.impact).not.toBe('');
   });
+  it('食い違い: user.d2.script がはいなのに user.d2.manual がいいえなら、未確定', () => {
+    const out = sum([user('S01', 'user.d2.script', yes), user('S01', 'user.d2.manual', no)]);
+    expect(out.S01.verdict).toBe('未確定');
+    expect(out.S01.pending).toContain('食い違い');
+  });
   it('食い違い: user.d2.script がはいなのに、ms.builder が none なら、判定を出さず未確定', () => {
     const out = sum([
       row('S01', E.menu, 'ms.builder', 'none'),
@@ -555,6 +560,11 @@ describe('summarize_ S01-rebuild 作り直し', () => {
     const out = sum([user('S01', 'user.d2.manual', no), user('S01', 'user.d5', yes)]);
     expect(out['S01-rebuild'].verdict).toBe('未確定');
     expect(out['S01-rebuild'].pending).toContain('やり直さず');
+  });
+  it('読めない（ms.d5 が skipped。user.d5 は要らない）', () => {
+    const out = sum([manual, row('S01', E.menu, 'ms.d5', 'skipped')]);
+    expect(out['S01-rebuild'].verdict).toBe('読めない');
+    expect(out['S01-rebuild'].impact).not.toBe('');
   });
   it('食い違い: ms.d5 が skipped なのに user.d5 の答えがあれば、未確定', () => {
     const out = sum([manual, row('S01', E.menu, 'ms.d5', 'skipped'), user('S01', 'user.d5', yes)]);
@@ -812,7 +822,7 @@ describe('summarize_ S10 持ち主のメール、S14 getOwner', () => {
     expect(out.S10.evidence).toContain('active が空');
     expect(out.S14.verdict).toBe('入口ごとの表');
   });
-  it('メニューで止まったときは、代わりの守りを M が決めると書く', () => {
+  it('メニューで止まったときは、代わりの守りを メインのセッションが決めると書く', () => {
     const out = sum([ng(E.menu), ok(E.button), ok(E.edit), ok(E.timer)]);
     expect(out.S10.impact).toContain('代わりの守り');
     expect(out.S10.impact).not.toContain('トリガーでは持ち主の確かめを使わない');
@@ -888,6 +898,23 @@ describe('summarize_ S13 偽のイベント', () => {
   });
   it('見分けられない', () => {
     const out = sum([fake('値だけ', 'false'), fake('form1', 'false'), fake('form2', 'true')]);
+    expect(out.S13.verdict).toBe('見分けられない');
+  });
+  it('誤りの後に3つそろえば、見分けられる（fake.error の行があっても、送り方ごとに比べる）', () => {
+    const out = sum([
+      row('S13', E.run, 'fake.error', 'form1:Failed'),
+      fake('値だけ', 'false'),
+      fake('form1', 'false'),
+      fake('form2', 'false'),
+    ]);
+    expect(out.S13.verdict).toBe('見分けられる');
+  });
+  it('誤りがあっても、どれかで true なら、見分けられない', () => {
+    const out = sum([
+      row('S13', E.run, 'fake.error', 'form1:Failed'),
+      fake('値だけ', 'false'),
+      fake('form2', 'true'),
+    ]);
     expect(out.S13.verdict).toBe('見分けられない');
   });
   it('form を送れない（fake.error の行がある）', () => {
@@ -1006,6 +1033,23 @@ describe('summarize_ S18 スマホのブラウザ', () => {
   });
   it('スマホの行で止まったら、開けない', () => {
     expect(sum(call('A のスマホの Chrome', '2', 'active が空')).S18.verdict).toBe('開けない');
+  });
+  it('食い違い: 通った行があるのに user.s18 がいいえなら、未確定', () => {
+    const out = sum([...call('A のスマホの Safari', '2'), user('S18', 'user.s18', no)]);
+    expect(out.S18.verdict).toBe('未確定');
+    expect(out.S18.pending).toContain('食い違い');
+  });
+  it('通った行があれば、止まった行があっても（Safari で止まり Chrome で通る）、開ける', () => {
+    const out = sum([
+      ...call('A のスマホの Safari', '2', 'active が空'),
+      ...call('A のスマホの Chrome', '2'),
+    ]);
+    expect(out.S18.verdict).toBe('開ける');
+  });
+  it('問い 17 は、Safari か Chrome のどちらか1つでも開けたかを聞く', () => {
+    expect((plain(g.noteByNumber_('17')) as any).question).toBe(
+      'スマホのブラウザ（Safari か Chrome のどちらか1つでも）で、2つ目のデプロイを開けたか',
+    );
   });
   it('user.s18 がいいえなら、開けない', () => {
     expect(sum([user('S18', 'user.s18', no)]).S18.verdict).toBe('開けない');

@@ -148,7 +148,7 @@ const NOTE_QUESTIONS = [
     key: 'user.s18',
     scenario: 'S18',
     kind: 'yesno',
-    question: 'スマホのブラウザで、2つ目のデプロイを開けたか',
+    question: 'スマホのブラウザ（Safari か Chrome のどちらか1つでも）で、2つ目のデプロイを開けたか',
   },
 ];
 
@@ -179,7 +179,7 @@ const VERDICTS = [
     scenarios: ['S01'],
     verdict: '手でもオンにできない',
     impact:
-      '味わいなどの複数の値を持つ項目を、1つ選ぶ列に分けるか、文字で入れる形にする。M が決める',
+      '味わいなどの複数の値を持つ項目を、1つ選ぶ列に分けるか、文字で入れる形にする。メインのセッションが決める',
   },
   {
     scenarios: ['S01'],
@@ -191,6 +191,12 @@ const VERDICTS = [
     verdict: '作り直しで消える',
     impact:
       '「メニューを公開」は、複数選択の列の入力規則をビルダーで作り直さない。整えるときは見本のセルからコピーする（作り直すと、オーナーの設定が公開のたびに消える）',
+  },
+  {
+    scenarios: ['S01'],
+    verdict: '読めない',
+    impact:
+      '「メニューを公開」は、複数選択の列の入力規則を読んで作り直さない（読めないので作り直せない）。触らないか、見本のセルからコピーする',
   },
   {
     scenarios: ['S02'],
@@ -232,7 +238,7 @@ const VERDICTS = [
     scenarios: ['S05'],
     verdict: '操作ごとの表',
     impact:
-      'onEdit が行の挿入と削除に反応せず、onChange が反応すれば、onChange を足すかを M が決める（§2.15）',
+      'onEdit が行の挿入と削除に反応せず、onChange が反応すれば、onChange を足すかを メインのセッションが決める（§2.15）',
   },
   {
     scenarios: ['S06'],
@@ -252,7 +258,8 @@ const VERDICTS = [
   {
     scenarios: ['S07'],
     verdict: '末尾 `_` も使える',
-    impact: '画像のボタンの入口を末尾 `_` にでき、画面から呼べない入口が増える。M が決める',
+    impact:
+      '画像のボタンの入口を末尾 `_` にでき、画面から呼べない入口が増える。メインのセッションが決める',
   },
   {
     scenarios: ['S08'],
@@ -264,7 +271,7 @@ const VERDICTS = [
     scenarios: ['S10', 'S14'],
     verdict: '入口ごとの表',
     impact:
-      'メニューと画像のボタンで通れば §3.3 のまま。通らなければ M が代わりの守りを決める。トリガーで通れば、トリガーでも持ち主の確かめを使う。トリガーで通らなければ、トリガーでは持ち主の確かめを使わない（影響の文は、この4つを出し分ける）',
+      'メニューと画像のボタンで通れば §3.3 のまま。通らなければ メインのセッションが代わりの守りを決める。トリガーで通れば、トリガーでも持ち主の確かめを使う。トリガーで通らなければ、トリガーでは持ち主の確かめを使わない（影響の文は、この4つを出し分ける）',
   },
   {
     scenarios: ['S11'],
@@ -274,7 +281,7 @@ const VERDICTS = [
   {
     scenarios: ['S11'],
     verdict: '止まらない',
-    impact: '守りが成り立たない。M が代わりを決める',
+    impact: '守りが成り立たない。メインのセッションが代わりを決める',
   },
   {
     scenarios: ['S12'],
@@ -299,7 +306,7 @@ const VERDICTS = [
   {
     scenarios: ['S13'],
     verdict: '見分けられない',
-    impact: '見分け方を変える。M が決める',
+    impact: '見分け方を変える。メインのセッションが決める',
   },
   {
     scenarios: ['S13'],
@@ -325,7 +332,7 @@ const VERDICTS = [
     scenarios: ['S16'],
     verdict: '作れない',
     impact:
-      '管理用のページは1つ目のデプロイで出し、管理の操作だけを持ち主の確かめで守る。M が決める',
+      '管理用のページは1つ目のデプロイで出し、管理の操作だけを持ち主の確かめで守る。メインのセッションが決める',
   },
   {
     scenarios: ['S17'],
@@ -336,7 +343,7 @@ const VERDICTS = [
     scenarios: ['S17'],
     verdict: '見分けられない',
     impact:
-      'URL の引数で画面を出し分ける（§3.3 の「引数で処理を変えない」を、画面の出し分けに限って緩める）か、管理の操作だけを守る。M が決める',
+      'URL の引数で画面を出し分ける（§3.3 の「引数で処理を変えない」を、画面の出し分けに限って緩める）か、管理の操作だけを守る。メインのセッションが決める',
   },
   {
     scenarios: ['S18'],
@@ -695,7 +702,12 @@ function summarizeMultiSelect_(rows) {
     '、ms.d2.value=' +
     valueOf_(rows, 'ms.d2.value');
   if (manual === undefined) return undecided_(evidence, '足りない控え: user.d2.manual');
-  if (manual !== 'はい') return decided_('S01', '手でもオンにできない', evidence);
+  if (manual !== 'はい') {
+    if (script === 'はい') {
+      return undecided_(evidence, '食い違い: user.d2.script がはいなのに、user.d2.manual がいいえ');
+    }
+    return decided_('S01', '手でもオンにできない', evidence);
+  }
   if (script === 'はい' && builder === 'none') {
     return undecided_(
       evidence,
@@ -732,6 +744,7 @@ function summarizeRebuild_(rows) {
       '食い違い: ms.d5 が skipped（作り直しをしていない）なのに、user.d5 の答えがある',
     );
   }
+  if (ms5 === 'skipped') return decided_('S01', '読めない', evidence);
   if (d5 === undefined) return undecided_(evidence, '足りない控え: user.d5');
   return decided_('S01', d5 === 'はい' ? '作り直しで残る' : '作り直しで消える', evidence);
 }
@@ -1006,9 +1019,13 @@ function summarizeWeb_(rows, out) {
     const s18 = valueOf_(rows, 'user.s18');
     const evidence =
       'A のスマホの d=2 の行: ' + hit.length + ' 行（' + reasons(hit) + '）、user.s18=' + s18;
-    if (s18 === 'いいえ') out.S18 = decided_('S18', '開けない', evidence);
-    else if (okIn(hit)) out.S18 = decided_('S18', '開ける', evidence);
-    else if (hit.length > 0) out.S18 = decided_('S18', '開けない', evidence);
+    if (okIn(hit) && s18 === 'いいえ') {
+      out.S18 = undecided_(
+        evidence,
+        '食い違い: d=2 のスマホの行で通った行があるのに、user.s18 がいいえ',
+      );
+    } else if (okIn(hit)) out.S18 = decided_('S18', '開ける', evidence);
+    else if (s18 === 'いいえ' || hit.length > 0) out.S18 = decided_('S18', '開けない', evidence);
     else
       out.S18 = undecided_(
         evidence,
@@ -1056,8 +1073,18 @@ function summarizeFake_(rows) {
     })
   )
     return decided_('S13', '見分けられない', evidence);
-  if (errors.length > 0) return decided_('S13', 'form を送れない', evidence);
+  // 送り方ごとに比べる。3つの行がそろっていれば、誤りの行があっても、先に判定する
   if (missing.length === 0) return decided_('S13', '見分けられる', evidence);
+  // form1 か form2 で、送れた行（fake）がなく、誤りの行（fake.error）だけがあるとき
+  const unsent = ['form1', 'form2'].filter(function (k) {
+    return (
+      missing.indexOf(k) >= 0 &&
+      errors.some(function (r) {
+        return String(r.value).indexOf(k + ':') === 0;
+      })
+    );
+  });
+  if (unsent.length > 0) return decided_('S13', 'form を送れない', evidence);
   return undecided_(evidence, '足りない事実: ' + missing.join('、') + ' の行');
 }
 

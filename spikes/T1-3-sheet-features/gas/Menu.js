@@ -547,10 +547,10 @@ function menuSummarize() {
   const table = [['シナリオ', '名前', '判定', '根拠', '設計への影響', '未確定の理由']];
   keys.forEach(function (k) {
     const r = out[k];
-    const base = k.slice(0, 3);
+    const label = summaryLabel_(k);
     table.push([
-      k,
-      (SCENARIOS[base] || '') + (k.length > 3 ? '（' + k.slice(4) + '）' : ''),
+      label.scenario,
+      label.name,
       r.verdict,
       scrubText_(r.evidence),
       r.impact,
