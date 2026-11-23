@@ -131,14 +131,15 @@ function collectOwner_() {
   };
 }
 
-function logOwner_(scenario, entry, extra) {
+function logOwner_(scenario, entry, extra, prefix) {
   const c = collectOwner_();
+  // Web アプリからの呼び出しでは、詳細の先頭に出どころとデプロイの印を書く（まとめはこれで組にする）
   log_(
     scenario,
     entry,
     'owner',
     c.verdict.ok ? 'ok' : c.verdict.reason,
-    c.summary + (extra ? '、' + extra : ''),
+    (prefix ? prefix + '、' : '') + c.summary + (extra ? '、' + extra : ''),
   );
   return c.verdict;
 }

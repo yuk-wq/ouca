@@ -167,7 +167,13 @@ export function createWorld(opts: Opts = {}) {
           for (let j = 0; j < nc; j++) sheet.validations.set(key(row + i, col + j), rule);
         return r;
       },
-      getDataValidation: () => sheet.validations.get(key(row, col)) ?? null,
+      getDataValidation: () => {
+        const k = key(row, col);
+        if (sheet.throwingValidations.has(k)) throw new Error('getDataValidation が失敗した');
+        if (sheet.hiddenValidations.has(k)) return null; // Apps Script からは読めず、REST では読める
+        return sheet.validations.get(k) ?? null;
+      },
+      getDisplayValue: () => String(r.getValue()),
       setNumberFormat: (fmt: string) => {
         calls.push(`format:${sheet.name}!${r.getA1Notation()}:${fmt}`);
         sheet.formats.push({ a1: r.getA1Notation(), fmt });
@@ -198,6 +204,8 @@ export function createWorld(opts: Opts = {}) {
       id: nextSheetId++,
       cells: new Map<string, any>(),
       validations: new Map<string, any>(),
+      hiddenValidations: new Set<string>(),
+      throwingValidations: new Set<string>(),
       formats: [] as { a1: string; fmt: string }[],
       images: [] as any[],
       valueAt(row: number, col: number) {
@@ -541,6 +549,12 @@ export function createWorld(opts: Opts = {}) {
     injected,
     load,
     sheetOf,
+    // Apps Script の getDataValidation() が null を返す、または例外を投げるセルにする（REST では読める）
+    breakValidationRead: (sheetName: string, a1: string, mode: 'null' | 'throw') => {
+      const sh = sheets.get(sheetName);
+      const p = parseA1(a1);
+      (mode === 'null' ? sh.hiddenValidations : sh.throwingValidations).add(`${p.row},${p.col}`);
+    },
     setActiveNull: (b: boolean) => {
       activeNull = b;
     },

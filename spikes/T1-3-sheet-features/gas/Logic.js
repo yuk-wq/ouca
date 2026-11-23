@@ -137,6 +137,19 @@ const NOTE_QUESTIONS = [
     kind: 'yesno',
     question: '2つ目を作った後も、1つ目のデプロイのアクセスできるユーザーが「全員」のままか',
   },
+  {
+    key: 'user.s07',
+    scenario: 'S07',
+    kind: 'text',
+    question:
+      '緑の画像（末尾 _ の関数を割り当てたもの）を押した後に出た画面（文言、または「何も出なかった」）',
+  },
+  {
+    key: 'user.s18',
+    scenario: 'S18',
+    kind: 'yesno',
+    question: 'スマホのブラウザで、2つ目のデプロイを開けたか',
+  },
 ];
 
 // 判定の表（DESIGN.md §2）。まとめのタブには verdict をそのまま出す
@@ -161,6 +174,12 @@ const VERDICTS = [
     scenarios: ['S01'],
     verdict: 'できない',
     impact: 'オーナーが入力規則の画面でオンにする手順を手順書に書く',
+  },
+  {
+    scenarios: ['S01'],
+    verdict: '手でもオンにできない',
+    impact:
+      '味わいなどの複数の値を持つ項目を、1つ選ぶ列に分けるか、文字で入れる形にする。M が決める',
   },
   {
     scenarios: ['S01'],
@@ -227,8 +246,13 @@ const VERDICTS = [
   },
   {
     scenarios: ['S07'],
-    verdict: '末尾 `_` の割り当て',
-    impact: '§3.3 の「末尾 `_` でない関数でなければならない」を確かめる',
+    verdict: '末尾 `_` は使えない',
+    impact: '§3.3 のまま（画像のボタンの入口は末尾 `_` なし）',
+  },
+  {
+    scenarios: ['S07'],
+    verdict: '末尾 `_` も使える',
+    impact: '画像のボタンの入口を末尾 `_` にでき、画面から呼べない入口が増える。M が決める',
   },
   {
     scenarios: ['S08'],
@@ -240,7 +264,7 @@ const VERDICTS = [
     scenarios: ['S10', 'S14'],
     verdict: '入口ごとの表',
     impact:
-      'メニューと画像のボタンで通れば §3.3 のまま。通らなければ M が代わりの守りを決める。トリガーで通らなければ、トリガーでは持ち主の確かめを使わない',
+      'メニューと画像のボタンで通れば §3.3 のまま。通らなければ M が代わりの守りを決める。トリガーで通れば、トリガーでも持ち主の確かめを使う。トリガーで通らなければ、トリガーでは持ち主の確かめを使わない（影響の文は、この4つを出し分ける）',
   },
   {
     scenarios: ['S11'],
@@ -278,9 +302,19 @@ const VERDICTS = [
     impact: '見分け方を変える。M が決める',
   },
   {
+    scenarios: ['S13'],
+    verdict: 'form を送れない',
+    impact: 'file の値は onEdit に届かないので、§3.3 の見分け方のまま',
+  },
+  {
     scenarios: ['S15'],
     verdict: '通る',
     impact: '管理用のページから管理の操作を呼べる',
+  },
+  {
+    scenarios: ['S15'],
+    verdict: '通らない',
+    impact: '管理用のページから管理の操作を呼ばない。管理はシートのメニューとボタンだけにする',
   },
   {
     scenarios: ['S16'],
@@ -309,6 +343,11 @@ const VERDICTS = [
     verdict: '開ける',
     impact: 'スマホの管理の手段になる',
   },
+  {
+    scenarios: ['S18'],
+    verdict: '開けない',
+    impact: 'スマホの管理は、管理タブのチェックボックスだけにする',
+  },
 ];
 
 // ---------------------------------------------------------------- 伏せ方
@@ -328,6 +367,10 @@ function maskDigits_(s) {
 // ログに書く前に、文の中のメールアドレスと Web アプリの URL（デプロイ ID）を伏せる
 function scrubText_(text) {
   return String(text === undefined || text === null ? '' : text)
+    .replace(
+      /https:\/\/script\.google\.com\/a\/macros\/[^\s"'/]+\/s\/[^\s"'/]+\/(exec|dev)/g,
+      'https://script.google.com/a/macros/***/s/***/$1',
+    )
     .replace(
       /https:\/\/script\.google\.com\/macros\/s\/[^\s"'/]+\/(exec|dev)/g,
       'https://script.google.com/macros/s/***/$1',
@@ -508,14 +551,27 @@ function parseMemo_(text) {
   return m ? { origin: m[1], d: m[2] } : { origin: String(text), d: '' };
 }
 
+function normalizeNumber_(text) {
+  return String(text === undefined || text === null ? '' : text)
+    .normalize('NFKC')
+    .trim();
+}
+
 function markByNumber_(text) {
-  const t = String(text).trim();
+  const t = normalizeNumber_(text);
   if (!/^\d+$/.test(t)) return null;
   return MARKS[Number(t) - 1] || null;
 }
 
+function noteNumber_(key) {
+  for (let i = 0; i < NOTE_QUESTIONS.length; i++) {
+    if (NOTE_QUESTIONS[i].key === key) return i + 1;
+  }
+  return 0;
+}
+
 function noteByNumber_(text) {
-  const t = String(text).trim();
+  const t = normalizeNumber_(text);
   if (!/^\d+$/.test(t)) return null;
   return NOTE_QUESTIONS[Number(t) - 1] || null;
 }
@@ -580,17 +636,33 @@ function hasCalled_(rows, entry, fn) {
   });
 }
 
-// Web の画面から呼んだ owner の行に、直前の web.memo の行の出どころをつける
+// owner の行の詳細の先頭に、出どころとデプロイの印（web.memo と同じ形）を書いてある。まとめはこれで組にする
 function withOrigins_(rows) {
   const out = [];
-  for (let i = 0; i < rows.length; i++) {
-    const r = rows[i];
-    if (r.fact !== 'owner' || r.entry !== ENTRY.run) continue;
-    const prev = i > 0 ? rows[i - 1] : null;
-    const m = prev && prev.fact === 'web.memo' ? parseMemo_(prev.value) : { origin: '', d: '' };
+  rows.forEach(function (r) {
+    if (r.fact !== 'owner' || r.entry !== ENTRY.run) return;
+    const m = parseMemo_(String(r.detail).split('、')[0]);
     out.push({ origin: m.origin, d: m.d, verdict: String(r.value) });
-  }
+  });
   return out;
+}
+
+// 同じ区切りの名前のまとまりが2つ以上あるとき（やり直したとき）は、最後のまとまりを使う
+function lastGroup_(rows, name) {
+  const groups = groupByMarks_(rows).filter(function (g) {
+    return g.mark === name;
+  });
+  return groups.length > 0 ? groups[groups.length - 1] : null;
+}
+
+function summaryLabel_(key) {
+  const base = String(key).slice(0, 3);
+  const extra = {
+    'S01-rebuild': '複数選択（作り直し）',
+    'S07-underscore': '画像のボタン（末尾 _）',
+    'S12-timer': 'triggerUid（時間主導）',
+  };
+  return { scenario: base, name: extra[key] || SCENARIOS[base] || '' };
 }
 
 function summarizeMultiSelect_(rows) {
@@ -598,6 +670,7 @@ function summarizeMultiSelect_(rows) {
   const manual = valueOf_(rows, 'user.d2.manual');
   const d4 = valueOf_(rows, 'user.d4');
   const d3 = valueOf_(rows, 'user.d3');
+  const builder = valueOf_(rows, 'ms.builder');
   const diffRow = lastRow_(rows, 'ms.diff');
   const diff = diffRow ? String(diffRow.value) : undefined;
   const evidence =
@@ -609,6 +682,8 @@ function summarizeMultiSelect_(rows) {
     d4 +
     '、user.d3=' +
     d3 +
+    '、ms.builder=' +
+    builder +
     '、ms.diff=' +
     diff +
     '、ms.d3.before=' +
@@ -616,12 +691,15 @@ function summarizeMultiSelect_(rows) {
     '、ms.d2.set=' +
     String(valueOf_(rows, 'ms.d2.set')).slice(0, 120) +
     '、ms.d2.manual=' +
-    String(valueOf_(rows, 'ms.d2.manual')).slice(0, 120);
+    String(valueOf_(rows, 'ms.d2.manual')).slice(0, 120) +
+    '、ms.d2.value=' +
+    valueOf_(rows, 'ms.d2.value');
   if (manual === undefined) return undecided_(evidence, '足りない控え: user.d2.manual');
-  if (manual !== 'はい') {
+  if (manual !== 'はい') return decided_('S01', '手でもオンにできない', evidence);
+  if (script === 'はい' && builder === 'none') {
     return undecided_(
       evidence,
-      '手でオンにした D2 で複数選べなかった（user.d2.manual=' + manual + '）ので、判定しない',
+      '食い違い: user.d2.script がはいなのに、ビルダーの複数選択のメソッドを呼んでいない（ms.builder が none）',
     );
   }
   if (script === 'はい') return decided_('S01', 'ビルダーで設定できる', evidence);
@@ -633,6 +711,29 @@ function summarizeMultiSelect_(rows) {
   if (d3 === undefined) missing.push('user.d3');
   if (missing.length > 0) return undecided_(evidence, '足りない控え: ' + missing.join('、'));
   return decided_('S01', 'できない', evidence);
+}
+
+function summarizeRebuild_(rows) {
+  const manual = valueOf_(rows, 'user.d2.manual');
+  const d5 = valueOf_(rows, 'user.d5');
+  const ms5 = valueOf_(rows, 'ms.d5');
+  const evidence =
+    'user.d2.manual=' + manual + '、user.d5=' + d5 + '、ms.d5=' + String(ms5).slice(0, 120);
+  if (manual === undefined) return undecided_(evidence, '足りない控え: user.d2.manual');
+  if (manual !== 'はい') {
+    return undecided_(
+      evidence,
+      '手でオンにした D2 で複数選べなかったので、判定しない（結果が出ている。やり直さずにそのまま貼る）',
+    );
+  }
+  if (ms5 === 'skipped' && d5 !== undefined) {
+    return undecided_(
+      evidence,
+      '食い違い: ms.d5 が skipped（作り直しをしていない）なのに、user.d5 の答えがある',
+    );
+  }
+  if (d5 === undefined) return undecided_(evidence, '足りない控え: user.d5');
+  return decided_('S01', d5 === 'はい' ? '作り直しで残る' : '作り直しで消える', evidence);
 }
 
 function summarizeUnderscore_(rows, scenario, entry, plainFn, underFn) {
@@ -647,26 +748,25 @@ function summarizeUnderscore_(rows, scenario, entry, plainFn, underFn) {
   if (created === underFn + ':error') return decided_(scenario, '作れない', evidence);
   if (plain && under) return decided_(scenario, '呼べる', evidence);
   if (!plain) return undecided_(evidence, '足りない事実: ' + plainFn + ' の行');
-  if (created === undefined) {
+  if (created === undefined)
     return undecided_(evidence, '足りない事実: trigger.created（' + underFn + ' を作った行）');
-  }
   return decided_(scenario, '呼べない', evidence);
 }
 
 function summarizeOwnerTable_(rows) {
   const entries = [ENTRY.menu, ENTRY.button, ENTRY.edit, ENTRY.timer];
   const lines = [];
-  let any = false;
+  const count = {};
   const failed = {};
   entries.forEach(function (en) {
     const rs = rows.filter(function (r) {
       return r.fact === 'owner' && r.entry === en;
     });
+    count[en] = rs.length;
     if (rs.length === 0) {
       lines.push(en + ': 行なし');
       return;
     }
-    any = true;
     const bad = rs.filter(function (r) {
       return r.value !== 'ok';
     });
@@ -687,16 +787,370 @@ function summarizeOwnerTable_(rows) {
     );
   });
   const evidence = lines.join('、');
-  if (!any)
-    return undecided_(
-      evidence,
-      '足りない事実: owner の行（メニュー、画像のボタン、編集トリガー、時間主導）',
-    );
-  const parts = impactFor_('S10', '入口ごとの表').split('。');
-  let impact = parts[0];
-  if (failed[ENTRY.menu] || failed[ENTRY.button]) impact = parts[1];
-  else if (failed[ENTRY.edit] || failed[ENTRY.timer]) impact = parts[2];
+  const missing = [];
+  if (!count[ENTRY.menu]) missing.push('メニューの owner の行');
+  if (!count[ENTRY.button]) missing.push('画像のボタンの owner の行');
+  if (missing.length > 0) return undecided_(evidence, '足りない事実: ' + missing.join('、'));
+  const parts = impactFor_('S10', '入口ごとの表')
+    .replace(/（影響の文は[^）]*）/, '')
+    .split('。');
+  let impact;
+  if (failed[ENTRY.menu] || failed[ENTRY.button]) {
+    impact = parts[1];
+  } else {
+    impact = parts[0];
+    const trig = count[ENTRY.edit] + count[ENTRY.timer] > 0;
+    if (trig) impact += '。' + (failed[ENTRY.edit] || failed[ENTRY.timer] ? parts[3] : parts[2]);
+  }
   return { verdict: '入口ごとの表', evidence: evidence, impact: impact, pending: '' };
+}
+
+function summarizeEdits_(rows) {
+  const ops = ['手入力', '貼り付け', '行の挿入', '行の削除'];
+  const lines = [];
+  ops.forEach(function (op) {
+    const g = lastGroup_(rows, op);
+    if (!g) return;
+    const has = function (pred) {
+      return g.rows.some(pred);
+    };
+    const changes = g.rows
+      .filter(function (r) {
+        return r.fact === 'edit' && r.entry === ENTRY.change;
+      })
+      .map(function (r) {
+        return r.value;
+      });
+    const yn = function (b) {
+      return b ? '動いた' : '動かない';
+    };
+    lines.push(
+      op +
+        ': onEdit(シンプル)=' +
+        yn(
+          has(function (r) {
+            return r.fact === 'edit' && r.entry === ENTRY.simple;
+          }),
+        ) +
+        '、編集トリガー(_ なし)=' +
+        yn(
+          has(function (r) {
+            return r.fact === 'called' && r.entry === ENTRY.edit && r.value === 'trigEditPlain';
+          }),
+        ) +
+        '、編集トリガー(_ あり)=' +
+        yn(
+          has(function (r) {
+            return r.fact === 'called' && r.entry === ENTRY.edit && r.value === 'trigEdit_';
+          }),
+        ) +
+        '、onChange=' +
+        (changes.length ? changes.join('/') : '動かない'),
+    );
+  });
+  if (lines.length === 0)
+    return undecided_('', '足りない事実: 区切り（手入力、貼り付け、行の挿入、行の削除）');
+  return decided_('S05', '操作ごとの表', lines.join('。'));
+}
+
+function summarizeIcons_(rows) {
+  const kinds = [
+    ['SVG(base64)', 'user.icon.svg64'],
+    ['SVG(URL)', 'user.icon.svgurl'],
+    ['PNG', 'user.icon.png'],
+  ];
+  const lines = [];
+  const missing = [];
+  kinds.forEach(function (k) {
+    const r = lastRow_(rows, 'icon', function (x) {
+      return String(x.value).indexOf(k[0] + ':') === 0;
+    });
+    const seen = valueOf_(rows, k[1]);
+    if (!r) missing.push(k[0] + ' の icon の行');
+    if (seen === undefined) missing.push(k[1]);
+    lines.push(
+      k[0] + ': 設定=' + (r ? String(r.value).split(':').pop() : '行なし') + '、見えた=' + seen,
+    );
+  });
+  if (missing.length > 0)
+    return undecided_(lines.join('、'), '足りない事実と控え: ' + missing.join('、'));
+  return decided_('S06', '種類ごとの表', lines.join('、'));
+}
+
+function summarizeButtonUnderscore_(rows) {
+  const assign = lastRow_(rows, 'assign', function (r) {
+    return String(r.value).indexOf('buttonUnderscore_:') === 0;
+  });
+  const pressed = hasCalled_(rows, ENTRY.button, 'buttonUnderscore_');
+  const s07 = valueOf_(rows, 'user.s07');
+  const evidence =
+    '割り当て=' +
+    (assign ? assign.value : '行なし') +
+    '、押して buttonUnderscore_ の行=' +
+    (pressed ? 'あり' : 'なし') +
+    '、user.s07=' +
+    s07;
+  if (assign && String(assign.value).slice(-6) === ':error')
+    return decided_('S07', '末尾 `_` は使えない', evidence);
+  if (pressed) return decided_('S07', '末尾 `_` も使える', evidence);
+  if (!assign) return undecided_(evidence, '足りない事実: assign の行（画像のボタンを置く）');
+  if (s07 === undefined) return undecided_(evidence, '足りない控え: user.s07');
+  return decided_('S07', '末尾 `_` は使えない', evidence);
+}
+
+function summarizePhone_(rows) {
+  const front = lastGroup_(rows, 'スマホの前');
+  const back = lastGroup_(rows, 'スマホの後');
+  const missing = [];
+  if (!front || !back) missing.push('区切り（スマホの前、スマホの後）');
+  ['user.phone.menu', 'user.phone.button', 'user.phone.checkbox'].forEach(function (k) {
+    if (valueOf_(rows, k) === undefined) missing.push(k);
+  });
+  const count = function (fn) {
+    return front ? front.rows.filter(fn).length : 0;
+  };
+  const evidence =
+    'メニュー: ' +
+    count(function (r) {
+      return r.fact === 'called' && r.entry === ENTRY.menu;
+    }) +
+    ' 行、画像のボタン: ' +
+    count(function (r) {
+      return r.fact === 'called' && r.entry === ENTRY.button;
+    }) +
+    ' 行、チェックボックス: ' +
+    count(function (r) {
+      return r.fact === 'checkbox';
+    }) +
+    ' 行、user.phone.menu=' +
+    valueOf_(rows, 'user.phone.menu') +
+    '、user.phone.button=' +
+    valueOf_(rows, 'user.phone.button') +
+    '、user.phone.checkbox=' +
+    valueOf_(rows, 'user.phone.checkbox');
+  return missing.length > 0
+    ? undecided_(evidence, '足りない事実と控え: ' + missing.join('、'))
+    : decided_('S08', '入口ごとの表', evidence);
+}
+
+function summarizeWeb_(rows, out) {
+  const calls = withOrigins_(rows);
+  const byOrigin = function (name) {
+    return calls.filter(function (c) {
+      return c.origin === name;
+    });
+  };
+  const okIn = function (list) {
+    return list.some(function (c) {
+      return c.verdict === 'ok';
+    });
+  };
+  const reasons = function (list) {
+    return list
+      .map(function (c) {
+        return c.verdict;
+      })
+      .join(',');
+  };
+
+  // S11
+  {
+    const b = byOrigin('B の PC');
+    const anon = byOrigin('シークレット');
+    const anyOk = okIn(b) || okIn(anon);
+    const evidence =
+      'B の PC: ' + b.length + ' 行、シークレット: ' + anon.length + ' 行、通った行=' + anyOk;
+    if (anyOk) out.S11 = decided_('S11', '止まらない', evidence);
+    else if (b.length > 0 && anon.length > 0) out.S11 = decided_('S11', '止まる', evidence);
+    else {
+      const m = [];
+      if (b.length === 0) m.push('B の PC の行');
+      if (anon.length === 0) m.push('シークレットの行');
+      out.S11 = undecided_(evidence, '足りない事実: ' + m.join('、'));
+    }
+  }
+  // S15
+  {
+    const a = byOrigin('A の PC');
+    const b = byOrigin('B の PC');
+    const anon = byOrigin('シークレット');
+    const evidence =
+      'A の PC: ' +
+      a.length +
+      ' 行（' +
+      reasons(a) +
+      '）、B の PC: ' +
+      b.length +
+      ' 行、シークレット: ' +
+      anon.length +
+      ' 行';
+    if (a.length > 0 && !okIn(a)) out.S15 = decided_('S15', '通らない', evidence);
+    else if (okIn(a) && b.length > 0 && anon.length > 0 && !okIn(b) && !okIn(anon)) {
+      out.S15 = decided_('S15', '通る', evidence);
+    } else {
+      const m = [];
+      if (a.length === 0) m.push('A の PC の行');
+      if (b.length === 0) m.push('B の PC の行');
+      if (anon.length === 0) m.push('シークレットの行');
+      if (okIn(b) || okIn(anon)) m.push('B かシークレットの行で通った');
+      out.S15 = undecided_(evidence, '足りない事実: ' + m.join('、'));
+    }
+  }
+  // S18
+  {
+    const hit = calls.filter(function (c) {
+      return (
+        (c.origin === 'A のスマホの Safari' || c.origin === 'A のスマホの Chrome') && c.d === '2'
+      );
+    });
+    const s18 = valueOf_(rows, 'user.s18');
+    const evidence =
+      'A のスマホの d=2 の行: ' + hit.length + ' 行（' + reasons(hit) + '）、user.s18=' + s18;
+    if (s18 === 'いいえ') out.S18 = decided_('S18', '開けない', evidence);
+    else if (okIn(hit)) out.S18 = decided_('S18', '開ける', evidence);
+    else if (hit.length > 0) out.S18 = decided_('S18', '開けない', evidence);
+    else
+      out.S18 = undecided_(
+        evidence,
+        '足りない事実: A のスマホの Safari か Chrome で、d=2 から呼んだ行',
+      );
+  }
+}
+
+function summarizeFake_(rows) {
+  const fakes = rows
+    .filter(function (r) {
+      return r.fact === 'fake';
+    })
+    .map(function (r) {
+      const p = String(r.value).split(':');
+      return { kind: p[0], real: p[1] };
+    });
+  const errors = rows.filter(function (r) {
+    return r.fact === 'fake.error';
+  });
+  const kinds = ['値だけ', 'form1', 'form2'];
+  const missing = kinds.filter(function (k) {
+    return !fakes.some(function (f) {
+      return f.kind === k;
+    });
+  });
+  const evidence =
+    fakes
+      .map(function (f) {
+        return f.kind + ':' + f.real;
+      })
+      .join('、') +
+    (errors.length
+      ? '、fake.error=[' +
+        errors
+          .map(function (r) {
+            return r.value;
+          })
+          .join(' / ') +
+        ']'
+      : '');
+  if (
+    fakes.some(function (f) {
+      return f.real === 'true';
+    })
+  )
+    return decided_('S13', '見分けられない', evidence);
+  if (errors.length > 0) return decided_('S13', 'form を送れない', evidence);
+  if (missing.length === 0) return decided_('S13', '見分けられる', evidence);
+  return undecided_(evidence, '足りない事実: ' + missing.join('、') + ' の行');
+}
+
+function summarizeDeploy_(rows) {
+  const parsed = rows
+    .filter(function (r) {
+      return r.fact === 'doget';
+    })
+    .map(function (r) {
+      return parseDoget_(r.value);
+    })
+    .filter(Boolean);
+  // S16
+  const keys = ['user.s16.b', 'user.s16.anon', 'user.s16.first'];
+  const b = valueOf_(rows, 'user.s16.b');
+  const anon = valueOf_(rows, 'user.s16.anon');
+  const first = valueOf_(rows, 'user.s16.first');
+  const bad = parsed.some(function (p) {
+    return p.d === '2' && p.owner !== 'ok';
+  });
+  const ev16 =
+    'user.s16.b=' +
+    b +
+    '、user.s16.anon=' +
+    anon +
+    '、user.s16.first=' +
+    first +
+    '、2つ目の doGet に持ち主以外の行=' +
+    bad;
+  let s16;
+  if (b === 'はい' || anon === 'はい' || first === 'いいえ' || bad)
+    s16 = decided_('S16', '作れない', ev16);
+  else {
+    const missing = keys.filter(function (k) {
+      return valueOf_(rows, k) === undefined;
+    });
+    s16 =
+      missing.length > 0
+        ? undecided_(ev16, '足りない控え: ' + missing.join('、'))
+        : decided_('S16', '作れる', ev16);
+  }
+  // S17: 持ち主の行（同じ出どころ）だけを比べる。同じ d の中のそろい具合も根拠に出す
+  const pick = function (d) {
+    const all = parsed.filter(function (p) {
+      return p.d === d;
+    });
+    const own = all.filter(function (p) {
+      return p.owner === 'ok';
+    });
+    return own.length > 0 ? own : all;
+  };
+  const distinct = function (list, field) {
+    const seen = {};
+    list.forEach(function (p) {
+      seen[p[field]] = 1;
+    });
+    return Object.keys(seen).length;
+  };
+  const one = pick('1');
+  const two = pick('2');
+  let s17;
+  if (one.length === 0 || two.length === 0) {
+    s17 = undecided_(
+      '',
+      '足りない事実: ' +
+        (one.length === 0 ? 'd=1 の doGet の行' : '') +
+        (one.length === 0 && two.length === 0 ? '、' : '') +
+        (two.length === 0 ? 'd=2 の doGet の行' : ''),
+    );
+  } else {
+    const l1 = one[one.length - 1];
+    const l2 = two[two.length - 1];
+    const evidence =
+      'getUrl のハッシュ: ' +
+      l1.hash +
+      ' と ' +
+      l2.hash +
+      '、e の値のハッシュ: ' +
+      l1.ehash +
+      ' と ' +
+      l2.ehash +
+      '、d=1 内のハッシュ: ' +
+      distinct(one, 'hash') +
+      ' 種類、d=2 内のハッシュ: ' +
+      distinct(two, 'hash') +
+      ' 種類';
+    s17 = decided_(
+      'S17',
+      l1.hash !== l2.hash || l1.ehash !== l2.ehash ? '見分けられる' : '見分けられない',
+      evidence,
+    );
+  }
+  return { s16: s16, s17: s17 };
 }
 
 function summarize_(rows) {
@@ -704,31 +1158,7 @@ function summarize_(rows) {
   const out = {};
 
   out.S01 = summarizeMultiSelect_(rows);
-  {
-    const manual = valueOf_(rows, 'user.d2.manual');
-    const d5 = valueOf_(rows, 'user.d5');
-    const evidence =
-      'user.d2.manual=' +
-      manual +
-      '、user.d5=' +
-      d5 +
-      '、ms.d5=' +
-      String(valueOf_(rows, 'ms.d5')).slice(0, 120);
-    if (manual !== 'はい') {
-      out['S01-rebuild'] = undecided_(
-        evidence,
-        '手でオンにした D2 で複数選べたこと（user.d2.manual=はい）が前提',
-      );
-    } else if (d5 === undefined) {
-      out['S01-rebuild'] = undecided_(evidence, '足りない控え: user.d5');
-    } else {
-      out['S01-rebuild'] = decided_(
-        'S01',
-        d5 === 'はい' ? '作り直しで残る' : '作り直しで消える',
-        evidence,
-      );
-    }
-  }
+  out['S01-rebuild'] = summarizeRebuild_(rows);
 
   // S02
   {
@@ -756,137 +1186,24 @@ function summarize_(rows) {
     const inRange = valueOf_(rows, 'list.inRange');
     const evidence = 'list.inList=' + inList + '、list.inRange=' + inRange;
     if (inList === 'false' || inRange === 'false') out.S04 = decided_('S04', '出ない', evidence);
-    else if (inList === 'true' && inRange === 'true') out.S04 = decided_('S04', '出る', evidence);
+    else if (inRange === 'unknown') {
+      out.S04 = undecided_(
+        evidence,
+        '範囲を読めなかった（list.inRange が unknown。S04 用のセル F2 の入力規則を読めなかった）',
+      );
+    } else if (inList === 'true' && inRange === 'true') out.S04 = decided_('S04', '出る', evidence);
     else out.S04 = undecided_(evidence, '足りない事実: list.inList、list.inRange');
   }
 
-  // S05
-  {
-    const groups = groupByMarks_(rows);
-    const ops = ['手入力', '貼り付け', '行の挿入', '行の削除'];
-    const lines = [];
-    ops.forEach(function (op) {
-      const g = groups.filter(function (x) {
-        return x.mark === op;
-      })[0];
-      if (!g) return;
-      const has = function (entry) {
-        return g.rows.some(function (r) {
-          return r.fact === 'edit' && r.entry === entry;
-        });
-      };
-      const changes = g.rows
-        .filter(function (r) {
-          return r.fact === 'edit' && r.entry === ENTRY.change;
-        })
-        .map(function (r) {
-          return r.value;
-        });
-      lines.push(
-        op +
-          ': onEdit(シンプル)=' +
-          (has(ENTRY.simple) ? '動いた' : '動かない') +
-          '、編集トリガー=' +
-          (has(ENTRY.edit) ? '動いた' : '動かない') +
-          '、onChange=' +
-          (changes.length ? changes.join('/') : '動かない'),
-      );
-    });
-    if (lines.length === 0)
-      out.S05 = undecided_('', '足りない事実: 区切り（手入力、貼り付け、行の挿入、行の削除）');
-    else out.S05 = decided_('S05', '操作ごとの表', lines.join('。'));
-  }
+  out.S05 = summarizeEdits_(rows);
+  out.S06 = summarizeIcons_(rows);
 
-  // S06
-  {
-    const kinds = [
-      ['SVG(base64)', 'user.icon.svg64'],
-      ['SVG(URL)', 'user.icon.svgurl'],
-      ['PNG', 'user.icon.png'],
-    ];
-    const lines = [];
-    const missing = [];
-    kinds.forEach(function (k) {
-      const r = lastRow_(rows, 'icon', function (x) {
-        return String(x.value).indexOf(k[0] + ':') === 0;
-      });
-      const seen = valueOf_(rows, k[1]);
-      if (!r) missing.push(k[0] + ' の icon の行');
-      if (seen === undefined) missing.push(k[1]);
-      lines.push(
-        k[0] + ': 設定=' + (r ? String(r.value).split(':').pop() : '行なし') + '、見えた=' + seen,
-      );
-    });
-    if (missing.length > 0)
-      out.S06 = undecided_(lines.join('、'), '足りない事実と控え: ' + missing.join('、'));
-    else out.S06 = decided_('S06', '種類ごとの表', lines.join('、'));
-  }
+  out.S07 = hasCalled_(rows, ENTRY.button, 'buttonPlain')
+    ? decided_('S07', '動く', 'buttonPlain の行=あり')
+    : undecided_('buttonPlain の行=なし', '足りない事実: buttonPlain の行（画像のボタンを押す）');
+  out['S07-underscore'] = summarizeButtonUnderscore_(rows);
 
-  // S07
-  {
-    const plain = hasCalled_(rows, ENTRY.button, 'buttonPlain');
-    out.S07 = plain
-      ? decided_('S07', '動く', 'buttonPlain の行=あり')
-      : undecided_('buttonPlain の行=なし', '足りない事実: buttonPlain の行（画像のボタンを押す）');
-    const assign = lastRow_(rows, 'assign', function (r) {
-      return String(r.value).indexOf('buttonUnderscore_:') === 0;
-    });
-    const pressed = hasCalled_(rows, ENTRY.button, 'buttonUnderscore_');
-    if (!assign && !pressed) {
-      out['S07-underscore'] = undecided_('', '足りない事実: assign の行（画像のボタンを置く）');
-    } else {
-      out['S07-underscore'] = decided_(
-        'S07',
-        '末尾 `_` の割り当て',
-        '割り当て=' +
-          (assign ? assign.value : '行なし') +
-          '、押して buttonUnderscore_ の行=' +
-          (pressed ? 'あり' : 'なし'),
-      );
-    }
-  }
-
-  // S08
-  {
-    const groups = groupByMarks_(rows);
-    const front = groups.filter(function (x) {
-      return x.mark === 'スマホの前';
-    })[0];
-    const back = groups.filter(function (x) {
-      return x.mark === 'スマホの後';
-    })[0];
-    const missing = [];
-    if (!front || !back) missing.push('区切り（スマホの前、スマホの後）');
-    ['user.phone.menu', 'user.phone.button', 'user.phone.checkbox'].forEach(function (k) {
-      if (valueOf_(rows, k) === undefined) missing.push(k);
-    });
-    const count = function (fn) {
-      return front ? front.rows.filter(fn).length : 0;
-    };
-    const evidence =
-      'メニュー: ' +
-      count(function (r) {
-        return r.fact === 'called' && r.entry === ENTRY.menu;
-      }) +
-      ' 行、画像のボタン: ' +
-      count(function (r) {
-        return r.fact === 'called' && r.entry === ENTRY.button;
-      }) +
-      ' 行、チェックボックス: ' +
-      count(function (r) {
-        return r.fact === 'checkbox';
-      }) +
-      ' 行、user.phone.menu=' +
-      valueOf_(rows, 'user.phone.menu') +
-      '、user.phone.button=' +
-      valueOf_(rows, 'user.phone.button') +
-      '、user.phone.checkbox=' +
-      valueOf_(rows, 'user.phone.checkbox');
-    out.S08 =
-      missing.length > 0
-        ? undecided_(evidence, '足りない事実と控え: ' + missing.join('、'))
-        : decided_('S08', '入口ごとの表', evidence);
-  }
+  out.S08 = summarizePhone_(rows);
 
   out.S10 = summarizeOwnerTable_(rows);
   out.S14 =
@@ -895,97 +1212,7 @@ function summarize_(rows) {
       : out.S10;
   if (out.S14.verdict === '入口ごとの表') out.S14.impact = out.S10.impact;
 
-  // S11、S15、S18: Web の画面から呼んだ owner の行
-  const calls = withOrigins_(rows);
-  const byOrigin = function (name) {
-    return calls.filter(function (c) {
-      return c.origin === name;
-    });
-  };
-  {
-    const b = byOrigin('B の PC');
-    const anon = byOrigin('シークレット');
-    const anyOk = b.concat(anon).some(function (c) {
-      return c.verdict === 'ok';
-    });
-    const evidence =
-      'B の PC: ' + b.length + ' 行、シークレット: ' + anon.length + ' 行、通った行=' + anyOk;
-    if (anyOk) out.S11 = decided_('S11', '止まらない', evidence);
-    else if (b.length > 0 && anon.length > 0) out.S11 = decided_('S11', '止まる', evidence);
-    else {
-      const m = [];
-      if (b.length === 0) m.push('B の PC の行');
-      if (anon.length === 0) m.push('シークレットの行');
-      out.S11 = undecided_(evidence, '足りない事実: ' + m.join('、'));
-    }
-  }
-  {
-    const a = byOrigin('A の PC');
-    const b = byOrigin('B の PC');
-    const anon = byOrigin('シークレット');
-    const aOk = a.some(function (c) {
-      return c.verdict === 'ok';
-    });
-    const stopped = b.concat(anon).every(function (c) {
-      return c.verdict !== 'ok';
-    });
-    const evidence =
-      'A の PC: ' +
-      a.length +
-      ' 行、B の PC: ' +
-      b.length +
-      ' 行、シークレット: ' +
-      anon.length +
-      ' 行';
-    if (aOk && b.length > 0 && anon.length > 0 && stopped)
-      out.S15 = decided_('S15', '通る', evidence);
-    else {
-      const m = [];
-      if (a.length === 0) m.push('A の PC の行');
-      else if (!aOk)
-        m.push(
-          'A の PC の行で止まった（' +
-            a
-              .map(function (c) {
-                return c.verdict;
-              })
-              .join('、') +
-            '）',
-        );
-      if (b.length === 0) m.push('B の PC の行');
-      if (anon.length === 0) m.push('シークレットの行');
-      if (!stopped) m.push('B かシークレットの行で通った');
-      out.S15 = undecided_(evidence, '足りない事実: ' + m.join('、'));
-    }
-  }
-  {
-    const hit = calls.filter(function (c) {
-      return (
-        (c.origin === 'A のスマホの Safari' || c.origin === 'A のスマホの Chrome') && c.d === '2'
-      );
-    });
-    const ok = hit.some(function (c) {
-      return c.verdict === 'ok';
-    });
-    const evidence = 'A のスマホの d=2 の行: ' + hit.length + ' 行、通った行=' + ok;
-    if (ok) out.S18 = decided_('S18', '開ける', evidence);
-    else if (hit.length === 0)
-      out.S18 = undecided_(
-        evidence,
-        '足りない事実: A のスマホの Safari か Chrome で、d=2 から呼んだ行',
-      );
-    else
-      out.S18 = undecided_(
-        evidence,
-        'スマホの行で止まった（' +
-          hit
-            .map(function (c) {
-              return c.verdict;
-            })
-            .join('、') +
-          '）',
-      );
-  }
+  summarizeWeb_(rows, out);
 
   // S12
   {
@@ -1006,107 +1233,10 @@ function summarize_(rows) {
     out['S12-timer'] = make(timer, '時間主導');
   }
 
-  // S13
-  {
-    const fakes = rows
-      .filter(function (r) {
-        return r.fact === 'fake';
-      })
-      .map(function (r) {
-        const p = String(r.value).split(':');
-        return { kind: p[0], real: p[1] };
-      });
-    const kinds = ['値だけ', 'form1', 'form2'];
-    const missing = kinds.filter(function (k) {
-      return !fakes.some(function (f) {
-        return f.kind === k;
-      });
-    });
-    const evidence = fakes
-      .map(function (f) {
-        return f.kind + ':' + f.real;
-      })
-      .join('、');
-    if (
-      fakes.some(function (f) {
-        return f.real === 'true';
-      })
-    )
-      out.S13 = decided_('S13', '見分けられない', evidence);
-    else if (missing.length === 0) out.S13 = decided_('S13', '見分けられる', evidence);
-    else out.S13 = undecided_(evidence, '足りない事実: ' + missing.join('、') + ' の行');
-  }
-
-  // S16
-  {
-    const keys = ['user.s16.b', 'user.s16.anon', 'user.s16.first'];
-    const b = valueOf_(rows, 'user.s16.b');
-    const anon = valueOf_(rows, 'user.s16.anon');
-    const first = valueOf_(rows, 'user.s16.first');
-    const bad = rows.some(function (r) {
-      if (r.fact !== 'doget') return false;
-      const p = parseDoget_(r.value);
-      return !!p && p.d === '2' && p.owner !== 'ok';
-    });
-    const evidence =
-      'user.s16.b=' +
-      b +
-      '、user.s16.anon=' +
-      anon +
-      '、user.s16.first=' +
-      first +
-      '、2つ目の doGet に持ち主以外の行=' +
-      bad;
-    if (b === 'はい' || anon === 'はい' || first === 'いいえ' || bad)
-      out.S16 = decided_('S16', '作れない', evidence);
-    else {
-      const missing = keys.filter(function (k) {
-        return valueOf_(rows, k) === undefined;
-      });
-      out.S16 =
-        missing.length > 0
-          ? undecided_(evidence, '足りない控え: ' + missing.join('、'))
-          : decided_('S16', '作れる', evidence);
-    }
-  }
-
-  // S17
-  {
-    const latestFor = function (d) {
-      let found = null;
-      rows.forEach(function (r) {
-        if (r.fact !== 'doget') return;
-        const p = parseDoget_(r.value);
-        if (p && p.d === d) found = p;
-      });
-      return found;
-    };
-    const one = latestFor('1');
-    const two = latestFor('2');
-    if (!one || !two) {
-      out.S17 = undecided_(
-        '',
-        '足りない事実: ' +
-          (!one ? 'd=1 の doGet の行' : '') +
-          (!one && !two ? '、' : '') +
-          (!two ? 'd=2 の doGet の行' : ''),
-      );
-    } else {
-      const evidence =
-        'getUrl のハッシュ: ' +
-        one.hash +
-        ' と ' +
-        two.hash +
-        '、e の値のハッシュ: ' +
-        one.ehash +
-        ' と ' +
-        two.ehash;
-      out.S17 =
-        one.hash !== two.hash || one.ehash !== two.ehash
-          ? decided_('S17', '見分けられる', evidence)
-          : decided_('S17', '見分けられない', evidence);
-    }
-  }
+  out.S13 = summarizeFake_(rows);
+  const d = summarizeDeploy_(rows);
+  out.S16 = d.s16;
+  out.S17 = d.s17;
 
   return out;
 }

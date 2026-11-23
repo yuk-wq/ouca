@@ -117,12 +117,16 @@ function doGet(e) {
     getUrl: u.kind + '、ID末尾4字=' + u.tail4 + '、ハッシュ=' + u.hash8,
     owner: own.verdict.ok ? '通る' : '止まる（' + own.verdict.reason + '）',
   };
-  const t = HtmlService.createTemplateFromFile('Web');
+  const t = HtmlService.createTemplateFromFile('WebPage');
   t.infoJson = safeJson_(info);
   return t
     .evaluate()
     .setTitle('T1-3 管理ページの検証')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+function memoD_(d) {
+  return String(d === undefined ? '' : d).slice(0, 10);
 }
 
 function memoOrigin_(origin) {
@@ -132,27 +136,30 @@ function memoOrigin_(origin) {
 
 // 画面から呼ぶ。出どころとデプロイの印を web.memo に書いてから、持ち主の確かめをする（止めない版）
 function webOwnerCheck(origin, d) {
-  log_(
-    'S11',
-    ENTRY.run,
-    'web.memo',
-    encodeMemo_({ origin: memoOrigin_(origin), d: String(d === undefined ? '' : d).slice(0, 10) }),
-    '画面で選んだ値',
-  );
-  const v = logOwner_('S15', ENTRY.run, '');
+  const memo = encodeMemo_({ origin: memoOrigin_(origin), d: memoD_(d) });
+  log_('S11', ENTRY.run, 'web.memo', memo, '画面で選んだ値');
+  const v = logOwner_('S15', ENTRY.run, '', memo);
   return JSON.stringify({ passed: v.ok, reason: v.reason });
 }
 
 // 同じ確かめを通らなければ例外で止める版。本番の入口の守りと同じ形
 function webOwnerGuard(origin, d) {
-  log_(
-    'S11',
-    ENTRY.run,
-    'web.memo',
-    encodeMemo_({ origin: memoOrigin_(origin), d: String(d === undefined ? '' : d).slice(0, 10) }),
-    '画面で選んだ値',
-  );
-  const v = logOwner_('S15', ENTRY.run, '止める版');
+  const memo = encodeMemo_({ origin: memoOrigin_(origin), d: memoD_(d) });
+  log_('S11', ENTRY.run, 'web.memo', memo, '画面で選んだ値');
+  const v = logOwner_('S15', ENTRY.run, '止める版', memo);
   if (!v.ok) throw new Error('持ち主の確かめで止めた');
   return JSON.stringify({ passed: true, reason: '' });
+}
+
+// 画面で form を送れなかったとき、画面が誤りの文言を送り返す
+function webFakeError(kind, message) {
+  const k = kind === 'form1' || kind === 'form2' ? kind : '(不明)';
+  log_(
+    'S13',
+    ENTRY.run,
+    'fake.error',
+    k + ':' + String(message === undefined ? '' : message).slice(0, 200),
+    '画面で form を送れなかった',
+  );
+  return 'ok';
 }

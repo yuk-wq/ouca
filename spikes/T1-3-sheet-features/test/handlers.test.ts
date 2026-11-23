@@ -337,6 +337,7 @@ describe('Web アプリの中（getActiveSpreadsheet が null）', () => {
   it('doGet は、開いたデプロイの印（d）を画面に埋め、doget の行に ehash を書く', () => {
     const { w, g } = setup();
     g.doGet({ parameter: { d: '2' }, parameters: { d: ['2'] }, queryString: 'd=2' });
+    expect(w.html[0]).toMatch(/^WebPage:/);
     expect(w.html.join('\n')).toContain('"d":"2"');
     const parsed = plain(g.parseDoget_(byFact(w, 'doget')[0].value)) as any;
     expect(parsed.d).toBe('2');
@@ -377,5 +378,240 @@ describe('控えを書く（menuNote）', () => {
     const { w, g } = setup({ promptTexts: ['6', 'a.b@example.com が出た'] });
     g.menuNote();
     expect(JSON.stringify(w.logRows())).not.toContain('a.b@example.com');
+  });
+});
+
+// ---------------------------------------------------------------- 書く側とまとめの取り決め
+
+const toRows = (w: any) => rowsOf(w).map((r: any) => ({ time: '', ...r }));
+const answers = (pairs: Record<string, string>) =>
+  Object.entries(pairs).map(([fact, value]) => ({
+    time: '',
+    scenario: '',
+    entry: 'メニュー',
+    fact,
+    value,
+    detail: '',
+  }));
+const summarizeOf = (g: any, w: any, extra: any[] = []) =>
+  plain(g.summarize_([...toRows(w), ...extra])) as any;
+
+describe('S01: D2 の入力規則を Apps Script が読めないとき（chip の複数選択）', () => {
+  function prepare(mode: 'null' | 'throw') {
+    const s = setup();
+    s.g.menuMultiSelect();
+    const beans = s.w.sheetOf(BEANS);
+    const rule = { ...s.w.readApiRule(BEANS, 'D2'), multiSelect: true };
+    beans
+      .getRange('D2')
+      .setDataValidation(
+        s.w.makeValidation(rule, beans.getRange('D2').getDataValidation().rangeObj),
+      );
+    s.w.breakValidationRead(BEANS, 'D2', mode);
+    return s;
+  }
+  it.each(['null', 'throw'] as const)(
+    'D2 の getDataValidation が %s でも、D4 と D3 の確かめは続き、D5 だけ skipped になる',
+    (mode) => {
+      const { w, g } = prepare(mode);
+      expect(() => g.menuMultiInspect()).not.toThrow();
+      expect(byFact(w, 'ms.d2.manual')[0].value).toContain('multiSelect');
+      expect(byFact(w, 'ms.d4')[0].value).toBe('same');
+      expect(byFact(w, 'ms.d3.before')[0].value).toBe('none');
+      expect(byFact(w, 'ms.d3.after')[0].value).toContain('multiSelect');
+      expect(byFact(w, 'ms.d5')[0].value).toBe('skipped');
+    },
+  );
+  it('まとめで、高度なサービスの判定に届く', () => {
+    const { w, g } = prepare('null');
+    g.menuMultiInspect();
+    const out = summarizeOf(
+      g,
+      w,
+      answers({ 'user.d2.script': 'いいえ', 'user.d2.manual': 'はい', 'user.d4': 'はい' }),
+    );
+    expect(out.S01.verdict).toBe('高度なサービスで設定できる');
+  });
+  it('まとめで、コピーの判定に届く', () => {
+    const { w, g } = prepare('null');
+    g.menuMultiInspect();
+    const out = summarizeOf(
+      g,
+      w,
+      answers({
+        'user.d2.script': 'いいえ',
+        'user.d2.manual': 'はい',
+        'user.d4': 'いいえ',
+        'user.d3': 'はい',
+      }),
+    );
+    expect(out.S01.verdict).toBe('コピーで設定できる');
+  });
+  it('手でオンにした後の D2 の getValue と getDisplayValue を ms.d2.value に書く', () => {
+    const { w, g } = prepare('null');
+    w.sheetOf(BEANS).getRange('D2').setValue('果実, ナッツ');
+    g.menuMultiInspect();
+    const v = byFact(w, 'ms.d2.value')[0].value;
+    expect(v).toContain('getValue');
+    expect(v).toContain('getDisplayValue');
+    expect(v).toContain('果実, ナッツ');
+  });
+  it('控えの番号は、README と同じ番号を詳細に書く（問い 1、3、4、5）', () => {
+    const { w, g } = setup();
+    g.menuMultiSelect();
+    const beans = w.sheetOf(BEANS);
+    const rule = { ...w.readApiRule(BEANS, 'D2'), multiSelect: true };
+    beans
+      .getRange('D2')
+      .setDataValidation(w.makeValidation(rule, beans.getRange('D2').getDataValidation().rangeObj));
+    g.menuMultiInspect();
+    const n = (k: string) => String(g.noteNumber_(k));
+    expect(byFact(w, 'ms.d2.set')[0].detail).toContain(n('user.d2.script') + '番');
+    expect(byFact(w, 'ms.d4')[0].detail).toContain(n('user.d4') + '番');
+    expect(byFact(w, 'ms.d3.after')[0].detail).toContain(n('user.d3') + '番');
+    expect(byFact(w, 'ms.d5')[0].detail).toContain(n('user.d5') + '番');
+  });
+});
+
+describe('S04: 候補の自動更新は、F2 のセルで確かめる', () => {
+  it('D2 の入力規則がなくても（準備だけ）、候補を足すと list.inRange が true で、まとめは「出る」', () => {
+    const { w, g } = setup();
+    g.menuAddOption();
+    expect(byFact(w, 'list.inList')[0].value).toBe('true');
+    expect(byFact(w, 'list.inRange')[0].value).toBe('true');
+    expect(summarizeOf(g, w).S04.verdict).toBe('出る');
+  });
+  it('F2 の入力規則を読めなければ list.inRange は unknown で、まとめは未確定', () => {
+    const { w, g } = setup();
+    w.sheetOf(BEANS).getRange('F2').clearDataValidations();
+    g.menuAddOption();
+    expect(byFact(w, 'list.inRange')[0].value).toBe('unknown');
+    expect(summarizeOf(g, w).S04.verdict).toBe('未確定');
+  });
+  it('F2 の getDataValidation が例外を投げても、unknown にして続ける', () => {
+    const { w, g } = setup();
+    w.breakValidationRead(BEANS, 'F2', 'throw');
+    expect(() => g.menuAddOption()).not.toThrow();
+    expect(byFact(w, 'list.inRange')[0].value).toBe('unknown');
+  });
+});
+
+describe('Web の画面と偽のイベントの誤り', () => {
+  it('webFakeError が fake.error の行を書き、まとめは「form を送れない」になる', () => {
+    const { w, g } = setup();
+    g.onEdit({ value: 'x' });
+    g.webFakeError('form1', 'Blob を送れなかった');
+    const r = byFact(w, 'fake.error')[0];
+    expect(r.value).toContain('form1');
+    expect(r.value).toContain('Blob を送れなかった');
+    expect(summarizeOf(g, w).S13.verdict).toBe('form を送れない');
+  });
+  it('owner の行の詳細に、出どころとデプロイの印が入り、まとめはこれで組にする', () => {
+    const { w, g } = setup();
+    g.webOwnerCheck('A のスマホの Safari', '2');
+    const own = byFact(w, 'owner')[0];
+    expect(plain(g.parseMemo_(own.detail.split('、')[0]))).toEqual({
+      origin: 'A のスマホの Safari',
+      d: '2',
+    });
+    const rows = toRows(w).filter((r: any) => r.fact !== 'web.memo');
+    expect((plain(g.summarize_(rows)) as any).S18.verdict).toBe('開ける');
+  });
+});
+
+describe('書く側とまとめの取り決め（事実の名前と値の形）', () => {
+  it('S05: 区切りと onEdit、trigChange の行から、操作ごとの表が組める', () => {
+    const { w, g } = setup({ promptTexts: ['1', '3', '4', '8'] });
+    const beans = w.sheetOf(BEANS);
+    g.menuMark();
+    g.onEdit({ source: w.ss, range: beans.getRange('E2'), authMode: 'FULL' });
+    g.menuMark();
+    g.trigChange({ changeType: 'INSERT_ROW' });
+    g.menuMark();
+    g.trigChange({ changeType: 'REMOVE_ROW' });
+    g.menuMark();
+    const ev = summarizeOf(g, w).S05.evidence;
+    expect(ev).toContain('手入力: onEdit(シンプル)=動いた');
+    expect(ev).toContain('行の挿入: ');
+    expect(ev).toContain('INSERT_ROW');
+    expect(ev).toContain('REMOVE_ROW');
+  });
+  it('S06: menuIcons と控え（問い 7〜9）から、種類ごとの表が組める', () => {
+    const { w, g } = setup({ promptTexts: ['7', 'はい', '8', 'いいえ', '9', 'はい'] });
+    g.menuIcons();
+    g.menuNote();
+    g.menuNote();
+    g.menuNote();
+    const out = summarizeOf(g, w);
+    expect(out.S06.verdict).toBe('種類ごとの表');
+    expect(out.S06.evidence).toContain('SVG(URL)');
+    const detail = byFact(w, 'icon')[0].detail;
+    expect(detail).toContain(String(g.noteNumber_('user.icon.svg64')));
+    expect(detail).toContain(String(g.noteNumber_('user.icon.png')));
+  });
+  it('S07: menuPlaceButtons と buttonUnderscore_ から、「末尾 _ も使える」が組める', () => {
+    const { w, g } = setup();
+    g.menuPlaceButtons();
+    g.buttonPlain();
+    g.buttonUnderscore_();
+    const out = summarizeOf(g, w);
+    expect(out.S07.verdict).toBe('動く');
+    expect(out['S07-underscore'].verdict).toBe('末尾 `_` も使える');
+  });
+  it('S10: menuOwnerCheck、buttonOwnerCheck、トリガーの行から、入口ごとの表が組める', () => {
+    const { w, g } = setup();
+    g.menuOwnerCheck();
+    g.buttonOwnerCheck();
+    g.timerPlain({ triggerUid: 'gone-0000' });
+    const out = summarizeOf(g, w);
+    expect(out.S10.verdict).toBe('入口ごとの表');
+    expect(out.S10.impact).toContain('トリガーでも持ち主の確かめを使う');
+  });
+  it('S17: doGet を d=1、d=2 で呼ぶと、e の違いから「見分けられる」が組める', () => {
+    const { w, g } = setup();
+    const e = (d: string, path: string) => ({
+      parameter: { d },
+      parameters: { d: [d] },
+      queryString: 'd=' + d,
+      pathInfo: path,
+      contextPath: '',
+    });
+    g.doGet(e('1', 'a'));
+    g.doGet(e('2', 'b'));
+    expect(summarizeOf(g, w).S17.verdict).toBe('見分けられる');
+  });
+  it('S17: URL の引数だけが違う doGet は、「見分けられない」になる', () => {
+    const { w, g } = setup();
+    const e = (d: string) => ({
+      parameter: { d },
+      parameters: { d: [d] },
+      queryString: 'd=' + d,
+      pathInfo: '',
+      contextPath: '',
+    });
+    g.doGet(e('1'));
+    g.doGet(e('2'));
+    expect(summarizeOf(g, w).S17.verdict).toBe('見分けられない');
+  });
+  it('ehash は、parameter、parameters、queryString の違いでは変わらず、ほかの値の違いで変わる', () => {
+    const { w, g } = setup();
+    const base = { pathInfo: '', contextPath: '' };
+    g.doGet({ ...base, parameter: { d: '1' }, parameters: { d: ['1'] }, queryString: 'd=1' });
+    g.doGet({ ...base, parameter: { d: '2' }, parameters: { d: ['2'] }, queryString: 'd=2' });
+    g.doGet({ ...base, pathInfo: 'x', parameter: { d: '1' }, parameters: {}, queryString: '' });
+    const h = byFact(w, 'doget').map((r: any) => (plain(g.parseDoget_(r.value)) as any).ehash);
+    expect(h[0]).toBe(h[1]);
+    expect(h[0]).not.toBe(h[2]);
+  });
+  it('doGet のページは、画面に埋める JSON を safeJson_ でエスケープする（</script> が出ない）', () => {
+    const { w, g } = setup();
+    g.doGet({ parameter: { d: '</script>' }, parameters: {}, queryString: '', pathInfo: '' });
+    expect(w.html[0]).not.toContain('</script>');
+  });
+  it('trigChange は、変更の種類（changeType）を edit の行の値に書く', () => {
+    const { w, g } = setup();
+    g.trigChange({ changeType: 'INSERT_ROW' });
+    const r = rowsOf(w).filter((x: any) => x.fact === 'edit');
+    expect(r[0]).toMatchObject({ entry: '変更トリガー', value: 'INSERT_ROW' });
   });
 });

@@ -1,8 +1,9 @@
 // DESIGN.md §5.3 つながりのテスト。メニュー、ボタン、トリガー、画面の関数名の綴りの誤りを防ぐ。
-import { readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import vm from 'node:vm';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createWorld } from './fakes';
+import { createWorld, plain } from './fakes';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const GAS = resolve(__dirname, '../gas');
@@ -32,8 +33,8 @@ describe('関数名の綴り', () => {
     expect(names.length).toBe(5);
     for (const n of names) expect(exists(n), n).toBe(true);
   });
-  it('Web.html から google.script.run で呼ぶ関数が存在する', () => {
-    const html = read('Web.html');
+  it('WebPage.html から google.script.run で呼ぶ関数が存在する', () => {
+    const html = read('WebPage.html');
     const names = [
       ...all(/call\(\s*'[^']*',\s*'(\w+)'/g, html),
       ...all(/google\.script\.run\.(\w+)\(/g, html),
@@ -66,5 +67,26 @@ describe('入口の一覧', () => {
   });
   it('一番外側に、関数でない値を出していない', () => {
     for (const n of names) expect(typeof ctx[n], n).toBe('function');
+  });
+});
+
+describe('ファイルと画面', () => {
+  it('HTML のファイル名は、.js のファイル名と重ならない（拡張子を除いた名前が同じだと保存できない可能性がある）', () => {
+    const files = readdirSync(GAS);
+    const base = (f: string) => f.replace(/\.(js|html|gs)$/, '');
+    const js = files.filter((f) => f.endsWith('.js')).map(base);
+    for (const h of files.filter((f) => f.endsWith('.html')).map(base)) {
+      expect(js, h).not.toContain(h);
+    }
+  });
+  it('createTemplateFromFile に書いた名前の HTML ファイルがある', () => {
+    const names = all(/createTemplateFromFile\('(\w+)'\)/g, read('Web.js'));
+    expect(names.length).toBeGreaterThan(0);
+    for (const n of names) expect(existsSync(resolve(GAS, n + '.html')), n).toBe(true);
+  });
+  it('画面の「どこから開いたか」の選択肢が、Logic.js の出どころの一覧と同じ', () => {
+    const html = read('WebPage.html');
+    const options = all(/<option value="([^"]+)">/g, html);
+    expect(options).toEqual(plain(vm.runInContext('ORIGINS', ctx)) as string[]);
   });
 });

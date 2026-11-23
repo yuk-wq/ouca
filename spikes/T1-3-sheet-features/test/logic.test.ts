@@ -70,6 +70,39 @@ describe('scrubText_（ログに書く前に、メールアドレスと URL を�
   });
 });
 
+describe('scrubText_ のドメイン付きの URL', () => {
+  it('/a/macros/<ドメイン>/s/<ID>/exec の形も、ドメインと ID を伏せる', () => {
+    const out = f('scrubText_')(
+      'https://script.google.com/a/macros/corp.example.org/s/AKfycbDOMAINID99/exec を開いた',
+    );
+    expect(out).not.toContain('AKfycbDOMAINID99');
+    expect(out).not.toContain('corp.example.org');
+  });
+});
+
+describe('safeJson_ と summaryLabel_', () => {
+  it('safeJson_: </script> を含む値でも、script が閉じず、JSON として読み戻せる', () => {
+    const ls = String.fromCharCode(0x2028);
+    const value = '</script><script>alert(1)</script>&' + ls;
+    const out = g.safeJson_({ a: value });
+    expect(out).not.toContain('</script>');
+    expect(out).not.toContain('<');
+    expect(out).not.toContain('&');
+    expect(out).not.toContain(ls);
+    expect(JSON.parse(out).a).toBe(value);
+  });
+  it('summaryLabel_: まとめの名前は日本語で、英語の鍵を出さない', () => {
+    for (const k of ['S01', 'S01-rebuild', 'S05', 'S07', 'S07-underscore', 'S12', 'S12-timer']) {
+      const l = plain(g.summaryLabel_(k)) as any;
+      expect(l.scenario, k).toBe(k.slice(0, 3));
+      expect(l.name, k).not.toMatch(/rebuild|underscore|timer/i);
+      expect(l.name.length, k).toBeGreaterThan(0);
+    }
+    expect((plain(g.summaryLabel_('S01-rebuild')) as any).name).toContain('作り直し');
+    expect((plain(g.summaryLabel_('S12-timer')) as any).name).toContain('時間主導');
+  });
+});
+
 describe('ownerVerdict_', () => {
   const v = f('ownerVerdict_');
   const ok = 'owner@example.com';
@@ -317,11 +350,13 @@ describe('web.memo と控えの問い', () => {
     expect(plain(g.noteByNumber_('1')).key).toBe('user.d2.script');
     expect(plain(g.noteByNumber_('15')).key).toBe('user.s16.first');
     expect(g.noteByNumber_('0')).toBeNull();
-    expect(g.noteByNumber_('16')).toBeNull();
+    expect(plain(g.noteByNumber_('16')).key).toBe('user.s07');
+    expect(plain(g.noteByNumber_('17')).key).toBe('user.s18');
+    expect(g.noteByNumber_('18')).toBeNull();
     expect(g.noteByNumber_('あ')).toBeNull();
   });
-  it('問いの一覧は、DESIGN.md §3.1 の15個の鍵と同じ', () => {
-    const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map(
+  it('問いの一覧は、DESIGN.md §3.1 の17個の鍵と同じ', () => {
+    const keys = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17].map(
       (n) => plain(g.noteByNumber_(String(n))).key,
     );
     expect(keys).toEqual([
@@ -340,7 +375,21 @@ describe('web.memo と控えの問い', () => {
       'user.s16.b',
       'user.s16.anon',
       'user.s16.first',
+      'user.s07',
+      'user.s18',
     ]);
+  });
+  it('noteNumber_: 鍵から番号を返す（アイコンは7〜9番）', () => {
+    expect(g.noteNumber_('user.d2.script')).toBe(1);
+    expect(g.noteNumber_('user.icon.svg64')).toBe(7);
+    expect(g.noteNumber_('user.icon.png')).toBe(9);
+    expect(g.noteNumber_('user.s18')).toBe(17);
+  });
+  it('番号の入力は、全角の数字と前後の空白も受け付ける', () => {
+    expect(g.markByNumber_('１')).toBe('手入力');
+    expect(g.markByNumber_('  ２ ')).toBe('貼り付け');
+    expect(plain(g.noteByNumber_('１７')).key).toBe('user.s18');
+    expect(plain(g.noteByNumber_(' 3\n')).key).toBe('user.d4');
   });
   it('validateNoteAnswer_: はい、いいえの問いは、ほかの答えを断る', () => {
     const q = g.noteByNumber_('1');
@@ -459,9 +508,19 @@ describe('summarize_ S01 複数選択', () => {
     ]);
     expect(out.S01.verdict).toBe('できない');
   });
-  it('user.d2.manual がいいえなら、どの判定も出さず未確定', () => {
-    const out = sum([user('S01', 'user.d2.script', yes), user('S01', 'user.d2.manual', no)]);
+  it('user.d2.manual がいいえなら、手でもオンにできない', () => {
+    const out = sum([user('S01', 'user.d2.script', no), user('S01', 'user.d2.manual', no)]);
+    expect(out.S01.verdict).toBe('手でもオンにできない');
+    expect(out.S01.impact).not.toBe('');
+  });
+  it('食い違い: user.d2.script がはいなのに、ms.builder が none なら、判定を出さず未確定', () => {
+    const out = sum([
+      row('S01', E.menu, 'ms.builder', 'none'),
+      ...manualYes,
+      user('S01', 'user.d2.script', yes),
+    ]);
     expect(out.S01.verdict).toBe('未確定');
+    expect(out.S01.pending).toContain('食い違い');
   });
   it('控えがなければ未確定で、足りない控えの名前を出す', () => {
     const out = sum([row('S01', E.menu, 'ms.d2.set', J(rule))]);
@@ -492,9 +551,15 @@ describe('summarize_ S01-rebuild 作り直し', () => {
     expect(out['S01-rebuild'].verdict).toBe('未確定');
     expect(out['S01-rebuild'].pending).toContain('user.d5');
   });
-  it('手でオンにした D2 で選べていなければ、未確定', () => {
+  it('手でオンにした D2 で選べていなければ、判定しない（未確定）', () => {
     const out = sum([user('S01', 'user.d2.manual', no), user('S01', 'user.d5', yes)]);
     expect(out['S01-rebuild'].verdict).toBe('未確定');
+    expect(out['S01-rebuild'].pending).toContain('やり直さず');
+  });
+  it('食い違い: ms.d5 が skipped なのに user.d5 の答えがあれば、未確定', () => {
+    const out = sum([manual, row('S01', E.menu, 'ms.d5', 'skipped'), user('S01', 'user.d5', yes)]);
+    expect(out['S01-rebuild'].verdict).toBe('未確定');
+    expect(out['S01-rebuild'].pending).toContain('食い違い');
   });
 });
 
@@ -588,6 +653,14 @@ describe('summarize_ S04 候補の自動更新', () => {
     ]);
     expect(out.S04.verdict).toBe('出ない');
   });
+  it('list.inRange が unknown（範囲を読めなかった）なら、「出ない」にせず未確定', () => {
+    const out = sum([
+      row('S04', E.menu, 'list.inList', 'true'),
+      row('S04', E.menu, 'list.inRange', 'unknown'),
+    ]);
+    expect(out.S04.verdict).toBe('未確定');
+    expect(out.S04.pending).toContain('list.inRange');
+  });
   it('行がなければ未確定', () => {
     expect(sum([]).S04.verdict).toBe('未確定');
   });
@@ -613,6 +686,25 @@ describe('summarize_ S05 編集の種類', () => {
   });
   it('区切りがなければ未確定', () => {
     expect(sum([row('S05', E.simple, 'edit', 'onEdit')]).S05.verdict).toBe('未確定');
+  });
+  it('_ なしと _ ありの編集トリガーを分けて出す', () => {
+    const out = sum([
+      mark('手入力'),
+      row('S09', E.edit, 'called', 'trigEditPlain'),
+      row('S05', E.edit, 'edit', 'onEdit'),
+      mark('終わり'),
+    ]);
+    expect(out.S05.evidence).toContain('編集トリガー(_ なし)=動いた');
+    expect(out.S05.evidence).toContain('編集トリガー(_ あり)=動かない');
+  });
+  it('同じ区切りが2つあれば、最後のまとまりを使う', () => {
+    const out = sum([
+      mark('手入力'),
+      row('S05', E.simple, 'edit', 'onEdit'),
+      mark('手入力'),
+      mark('終わり'),
+    ]);
+    expect(out.S05.evidence).toContain('手入力: onEdit(シンプル)=動かない');
   });
 });
 
@@ -643,10 +735,29 @@ describe('summarize_ S07 画像のボタン', () => {
   it('動く', () => {
     expect(sum([row('S07', E.button, 'called', 'buttonPlain')]).S07.verdict).toBe('動く');
   });
-  it('末尾 _ の割り当て（エラーになった結果を出す）', () => {
+  it('末尾 _ は使えない（割り当てがエラー）', () => {
     const out = sum([row('S07', E.menu, 'assign', 'buttonUnderscore_:error')]);
-    expect(out['S07-underscore'].verdict).toBe('末尾 `_` の割り当て');
+    expect(out['S07-underscore'].verdict).toBe('末尾 `_` は使えない');
     expect(out['S07-underscore'].evidence).toContain('error');
+  });
+  it('末尾 _ は使えない（割り当てられたが、押して動かなかったと user.s07 に控えた）', () => {
+    const out = sum([
+      row('S07', E.menu, 'assign', 'buttonUnderscore_:ok'),
+      user('S07', 'user.s07', '何も出なかった'),
+    ]);
+    expect(out['S07-underscore'].verdict).toBe('末尾 `_` は使えない');
+  });
+  it('割り当てられたが、押した控え（user.s07）がなければ、未確定', () => {
+    const out = sum([row('S07', E.menu, 'assign', 'buttonUnderscore_:ok')]);
+    expect(out['S07-underscore'].verdict).toBe('未確定');
+    expect(out['S07-underscore'].pending).toContain('user.s07');
+  });
+  it('末尾 _ も使える（割り当てられ、押して buttonUnderscore_ の行が出た）', () => {
+    const out = sum([
+      row('S07', E.menu, 'assign', 'buttonUnderscore_:ok'),
+      row('S07', E.button, 'called', 'buttonUnderscore_'),
+    ]);
+    expect(out['S07-underscore'].verdict).toBe('末尾 `_` も使える');
   });
   it('buttonPlain の行がなければ未確定', () => {
     expect(sum([]).S07.verdict).toBe('未確定');
@@ -680,6 +791,16 @@ describe('summarize_ S08 スマホ', () => {
   it('区切りがなければ未確定', () => {
     expect(sum(phoneUser).S08.verdict).toBe('未確定');
   });
+  it('スマホの前が2つあれば（やり直し）、最後のまとまりを使う', () => {
+    const out = sum([
+      mark('スマホの前'),
+      row('S08', E.button, 'called', 'buttonPlain'),
+      mark('スマホの前'),
+      mark('スマホの後'),
+      ...phoneUser,
+    ]);
+    expect(out.S08.evidence).toContain('画像のボタン: 0');
+  });
 });
 
 describe('summarize_ S10 持ち主のメール、S14 getOwner', () => {
@@ -701,15 +822,26 @@ describe('summarize_ S10 持ち主のメール、S14 getOwner', () => {
     expect(out.S10.impact).toContain('トリガーでは持ち主の確かめを使わない');
     expect(out.S10.impact).not.toContain('代わりの守り');
   });
+  it('トリガーで通れば、トリガーでも持ち主の確かめを使うと書く', () => {
+    const out = sum([ok(E.menu), ok(E.button), ok(E.edit), ok(E.timer)]);
+    expect(out.S10.impact).toContain('トリガーでも持ち主の確かめを使う');
+    expect(out.S10.impact).toContain('§3.3 のまま');
+  });
+  it('メニューの行だけで画像のボタンの行がなければ、未確定', () => {
+    const out = sum([ok(E.menu), ok(E.edit)]);
+    expect(out.S10.verdict).toBe('未確定');
+    expect(out.S10.pending).toContain('画像のボタン');
+    expect(out.S14.verdict).toBe('未確定');
+  });
   it('行がなければ未確定', () => {
     expect(sum([]).S10.verdict).toBe('未確定');
   });
 });
 
 describe('summarize_ S11 知らない人の Web 呼び出し', () => {
+  // 出どころとデプロイの印は owner の行の詳細で組にする（並び順で組にしない）
   const call = (origin: string, verdict: string) => [
-    row('S11', E.run, 'web.memo', memo(origin)),
-    row('S11', E.run, 'owner', verdict),
+    row('S11', E.run, 'owner', verdict, memo(origin)),
   ];
   it('止まる', () => {
     const out = sum([...call('B の PC', 'active が空'), ...call('シークレット', 'active が空')]);
@@ -758,6 +890,14 @@ describe('summarize_ S13 偽のイベント', () => {
     const out = sum([fake('値だけ', 'false'), fake('form1', 'false'), fake('form2', 'true')]);
     expect(out.S13.verdict).toBe('見分けられない');
   });
+  it('form を送れない（fake.error の行がある）', () => {
+    const out = sum([
+      fake('値だけ', 'false'),
+      row('S13', E.run, 'fake.error', 'form1:送れなかった'),
+    ]);
+    expect(out.S13.verdict).toBe('form を送れない');
+    expect(out.S13.evidence).toContain('form1');
+  });
   it('form2 の行がなければ未確定で、form2 を足りない事実に出す', () => {
     const out = sum([fake('値だけ', 'false'), fake('form1', 'false')]);
     expect(out.S13.verdict).toBe('未確定');
@@ -767,8 +907,7 @@ describe('summarize_ S13 偽のイベント', () => {
 
 describe('summarize_ S15 管理ページの持ち主', () => {
   const call = (origin: string, verdict: string) => [
-    row('S15', E.run, 'web.memo', memo(origin)),
-    row('S15', E.run, 'owner', verdict),
+    row('S15', E.run, 'owner', verdict, memo(origin)),
   ];
   it('通る（A の PC で通り、B とシークレットで止まる）', () => {
     const out = sum([
@@ -778,14 +917,22 @@ describe('summarize_ S15 管理ページの持ち主', () => {
     ]);
     expect(out.S15.verdict).toBe('通る');
   });
-  it('A の行で止まったら未確定で、理由を出す', () => {
+  it('A の PC の行で止まったら、通らない', () => {
+    const out = sum([...call('A の PC', 'active が空')]);
+    expect(out.S15.verdict).toBe('通らない');
+    expect(out.S15.evidence).toContain('active が空');
+  });
+  it('A の PC の行がなければ未確定', () => {
+    expect(sum([...call('B の PC', 'active が空')]).S15.verdict).toBe('未確定');
+  });
+  it('owner の行の並び順や、web.memo の行の有無に関係なく、詳細の出どころで組にする', () => {
     const out = sum([
-      ...call('A の PC', 'active が空'),
-      ...call('B の PC', 'active が空'),
-      ...call('シークレット', 'active が空'),
+      row('S15', E.run, 'web.memo', memo('B の PC')),
+      row('S15', E.run, 'owner', 'ok', memo('A の PC')),
+      row('S15', E.run, 'owner', 'active が空', memo('シークレット')),
+      row('S15', E.run, 'owner', 'active が空', memo('B の PC')),
     ]);
-    expect(out.S15.verdict).toBe('未確定');
-    expect(out.S15.pending).toContain('active が空');
+    expect(out.S15.verdict).toBe('通る');
   });
 });
 
@@ -834,12 +981,19 @@ describe('summarize_ S17 doGet の見分け', () => {
   it('2つ目の行がなければ未確定', () => {
     expect(sum([doget('1', 'h1')]).S17.verdict).toBe('未確定');
   });
+  it('持ち主の行だけを比べる（持ち主以外の行のハッシュは比べない）', () => {
+    const out = sum([doget('1', 'h1'), doget('2', 'h1'), doget('2', 'hX', 'active が空')]);
+    expect(out.S17.verdict).toBe('見分けられない');
+  });
+  it('同じ d の中でハッシュがそろっていないことも、根拠に出す', () => {
+    const out = sum([doget('1', 'h1'), doget('1', 'h9'), doget('2', 'h2')]);
+    expect(out.S17.evidence).toContain('d=1 内のハッシュ: 2 種類');
+  });
 });
 
 describe('summarize_ S18 スマホのブラウザ', () => {
   const call = (origin: string, d: string, verdict = 'ok') => [
-    row('S18', E.run, 'web.memo', memo(origin, d)),
-    row('S18', E.run, 'owner', verdict),
+    row('S18', E.run, 'owner', verdict, memo(origin, d)),
   ];
   it('開ける（A のスマホで d=2 から来て、通る）', () => {
     expect(sum(call('A のスマホの Safari', '2')).S18.verdict).toBe('開ける');
@@ -850,7 +1004,13 @@ describe('summarize_ S18 スマホのブラウザ', () => {
   it('スマホでない行だけなら未確定', () => {
     expect(sum(call('A の PC', '2')).S18.verdict).toBe('未確定');
   });
-  it('スマホの行で止まったら未確定', () => {
-    expect(sum(call('A のスマホの Chrome', '2', 'active が空')).S18.verdict).toBe('未確定');
+  it('スマホの行で止まったら、開けない', () => {
+    expect(sum(call('A のスマホの Chrome', '2', 'active が空')).S18.verdict).toBe('開けない');
+  });
+  it('user.s18 がいいえなら、開けない', () => {
+    expect(sum([user('S18', 'user.s18', no)]).S18.verdict).toBe('開けない');
+  });
+  it('user.s18 がはいでも、d=2 のスマホの行がなければ未確定', () => {
+    expect(sum([user('S18', 'user.s18', yes)]).S18.verdict).toBe('未確定');
   });
 });

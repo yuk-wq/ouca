@@ -98,6 +98,26 @@
           [name](...args);
       }
 
+      // form を送る。送れなかったときは、誤りの文言を webFakeError で記録する（まとめの「form を送れない」の根拠）
+      function callForm(label, kind, form) {
+        show(label, '（呼び出し中）');
+        function failed(err) {
+          const msg = String((err && err.message) || err);
+          show(label + ' 失敗', msg);
+          google.script.run.webFakeError(kind, msg);
+        }
+        try {
+          google.script.run
+            .withSuccessHandler(function (r) {
+              show(label + ' 成功', String(r));
+            })
+            .withFailureHandler(failed)
+            .onEdit(form);
+        } catch (err) {
+          failed(err);
+        }
+      }
+
       document.getElementById('check').addEventListener('click', function () {
         call('webOwnerCheck', 'webOwnerCheck', origin(), SERVER_INFO.d);
       });
@@ -114,10 +134,10 @@
         });
       });
       document.getElementById('sendForm2').addEventListener('click', function () {
-        call('onEdit（source と range が file の form）', 'onEdit', document.getElementById('g'));
+        callForm('onEdit（source と range が file の form）', 'form2', document.getElementById('g'));
       });
       document.getElementById('sendForm').addEventListener('click', function () {
-        call('onEdit（form）', 'onEdit', document.getElementById('f'));
+        callForm('onEdit（form）', 'form1', document.getElementById('f'));
       });
     </script>
   </body>

@@ -71,6 +71,7 @@ function menuSetup() {
   list.getRange('A1:A200').clearContent();
   list.getRange('A1').setFormula('=VSTACK("果実","ナッツ",TOCOL(\'' + SHEET.items + "'!A2:A,1))");
   list.setColumnWidth(1, 220);
+  setS04Cell_(beans, list);
 
   // 管理: ボタンの見出しとチェックボックス
   const admin = sheet_(SHEET.admin);
@@ -101,6 +102,20 @@ function menuSetup() {
     '5つのタブ（豆の表、項目、_リスト、管理、アイコン）とダミーデータを作った',
   );
   ss.toast('準備ができた', 'T1-3', 5);
+}
+
+// S04 用のセル（豆の表の F2）。スクリプトで、_リストを参照する1つ選ぶ形のプルダウンを置く
+function setS04Cell_(beans, list) {
+  beans.getRange('F1').setValue('S04 用（候補を足すと、ここのプルダウンに出る）');
+  beans.getRange('F2').clearDataValidations();
+  beans
+    .getRange('F2')
+    .setDataValidation(
+      SpreadsheetApp.newDataValidation()
+        .requireValueInRange(list.getRange('A1:A200'), true)
+        .setAllowInvalid(false)
+        .build(),
+    );
 }
 
 // ---------------------------------------------------------------- S01 複数選択のプルダウン
@@ -179,6 +194,7 @@ function menuMultiSelect() {
   // 1つ選ぶ形のプルダウンを D2 だけに付ける。D3:D6 は入力規則なしにして、コピーの確かめに使う
   beans.getRange('D3:D6').clearDataValidations();
   beans.getRange('D2').setDataValidation(builder.build());
+  setS04Cell_(beans, list);
   const st = readValidationState_(SHEET.beans, 'D2');
   log_(
     'S01',
@@ -186,7 +202,9 @@ function menuMultiSelect() {
     'ms.d2.set',
     validationValue_(st),
     st.message ||
-      'D2 だけにプルダウンを設定した。ここで複数選べるか試し、メニュー「控えを書く」の1番に書く',
+      'D2 だけにプルダウンを設定した。ここで複数選べるか試し、メニュー「控えを書く」の' +
+        noteNumber_('user.d2.script') +
+        '番に書く',
   );
   ss.toast('D2 にプルダウンを設定した。複数選べるか試す', 'T1-3', 5);
 }
@@ -196,13 +214,22 @@ function menuMultiInspect() {
   const beans = ss.getSheetByName(SHEET.beans);
   if (!beans) throw new Error('先に「準備」を押す');
   const d2 = beans.getRange('D2');
-  const dv = d2.getDataValidation();
+  // chip の複数選択は、Apps Script から null になるか、例外になる可能性がある。どちらでも続ける
+  let dv = null;
+  let dvError = '';
+  try {
+    dv = d2.getDataValidation();
+  } catch (err) {
+    dvError = maskDigits_((err && err.message) || err).slice(0, 120);
+  }
   const st2 = readValidationState_(SHEET.beans, 'D2');
   const criteria = dv
     ? safe_(function () {
         return String(dv.getCriteriaType());
       })
-    : 'getDataValidation が null';
+    : dvError
+      ? 'getDataValidation が例外（' + dvError + '）'
+      : 'getDataValidation が null';
   log_(
     'S01',
     ENTRY.menu,
@@ -210,11 +237,10 @@ function menuMultiInspect() {
     validationValue_(st2),
     'getCriteriaType=' + criteria + (st2.message ? '、' + st2.message : ''),
   );
-  if (!dv) {
-    log_('S01', ENTRY.menu, 'ms.d5', 'skipped', 'D2 に入力規則がないので、D5 には書かなかった');
-    ss.toast('D2 の入力規則を Apps Script から読めない。ログを見る', 'T1-3', 8);
-    return;
-  }
+  const shown = safe_(function () {
+    return 'getValue=' + String(d2.getValue()) + '|getDisplayValue=' + String(d2.getDisplayValue());
+  });
+  log_('S01', ENTRY.menu, 'ms.d2.value', shown, '複数選んだときの区切りの形を知るため');
 
   // 手でオンにする前（ms.d2.set）と後の D2 の JSON の差
   const setRow = readRows_().filter(function (r) {
@@ -277,7 +303,10 @@ function menuMultiInspect() {
     ENTRY.menu,
     'ms.d4',
     d4,
-    d4detail + '。D4 で複数選べるか試し、メニュー「控えを書く」の3番に書く',
+    d4detail +
+      '。D4 で複数選べるか試し、メニュー「控えを書く」の' +
+      noteNumber_('user.d4') +
+      '番に書く',
   );
 
   // D2 の入力規則を D3 へコピーして、前後の D3 を読む
@@ -293,19 +322,43 @@ function menuMultiInspect() {
     ENTRY.menu,
     'ms.d3.after',
     validationValue_(after),
-    copy + '。D3 で複数選べるか試し、メニュー「控えを書く」の4番に書く',
+    copy +
+      '。D3 で複数選べるか試し、メニュー「控えを書く」の' +
+      noteNumber_('user.d3') +
+      '番に書く',
   );
-  // 手でオンにした D2 の入力規則を、作り直して D5 に設定する（「メニューを公開」が作り直しても残るかを見る）
-  let d5detail = '';
-  try {
-    beans.getRange('D5').setDataValidation(dv.copy().build());
-    d5detail = 'getDataValidation().copy().build() で設定した。D5 で複数選べるか試す';
-  } catch (err) {
-    d5detail = '設定できなかった（' + maskDigits_((err && err.message) || err).slice(0, 200) + '）';
+  // 手でオンにした D2 の入力規則を、作り直して D5 に設定する（「メニューを公開」が作り直しても残るかを見る）。
+  // D2 の入力規則を Apps Script から読めないときは、D5 だけを飛ばす
+  if (!dv) {
+    log_(
+      'S01',
+      ENTRY.menu,
+      'ms.d5',
+      'skipped',
+      'D2 の入力規則を Apps Script から読めないので、D5 には書かなかった',
+    );
+  } else {
+    let d5detail = '';
+    try {
+      beans.getRange('D5').setDataValidation(dv.copy().build());
+      d5detail =
+        'getDataValidation().copy().build() で設定した。D5 で複数選べるか試し、メニュー「控えを書く」の' +
+        noteNumber_('user.d5') +
+        '番に書く';
+    } catch (err) {
+      d5detail =
+        '設定できなかった（' + maskDigits_((err && err.message) || err).slice(0, 200) + '）';
+    }
+    const st5 = readValidationState_(SHEET.beans, 'D5');
+    log_('S01', ENTRY.menu, 'ms.d5', validationValue_(st5), d5detail);
   }
-  const st5 = readValidationState_(SHEET.beans, 'D5');
-  log_('S01', ENTRY.menu, 'ms.d5', validationValue_(st5), d5detail);
-  ss.toast('D4、D3、D5 の確かめを試した。それぞれで複数選べるか試す', 'T1-3', 8);
+  ss.toast(
+    dv
+      ? 'D4、D3、D5 の確かめを試した。それぞれで複数選べるか試す'
+      : 'D2 を Apps Script から読めないので、D5 は飛ばして、D4、D3 の確かめを試した。ログを見る',
+    'T1-3',
+    8,
+  );
 }
 
 // ---------------------------------------------------------------- S04 候補を足す
@@ -327,14 +380,18 @@ function menuAddOption() {
       return String(r[0]);
     });
   const idx = values.indexOf(name);
-  const dv = beans.getRange('D2').getDataValidation();
-  let a1 = '(D2 に入力規則がない)';
-  if (dv) {
-    a1 = safe_(function () {
-      return dv.getCriteriaValues()[0].getA1Notation();
-    });
+  // S04 用のセル F2（スクリプトが1つ選ぶ形のプルダウンを置く）の入力規則が参照する範囲を読む。読めなければ unknown
+  let a1 = '(読めなかった)';
+  let inRange = 'unknown';
+  try {
+    const dv = beans.getRange('F2').getDataValidation();
+    if (dv) {
+      a1 = String(dv.getCriteriaValues()[0].getA1Notation());
+      inRange = String(idx >= 0 && rangeCovers_(a1, idx + 1));
+    }
+  } catch (err) {
+    a1 = '(読めなかった: ' + maskDigits_((err && err.message) || err).slice(0, 80) + ')';
   }
-  const inRange = idx >= 0 && rangeCovers_(a1, idx + 1);
   log_('S04', ENTRY.menu, 'list.added', name, '項目タブに足した');
   log_(
     'S04',
@@ -343,8 +400,8 @@ function menuAddOption() {
     String(idx >= 0),
     '_リストの値は ' + values.filter(Boolean).length + ' 個。プルダウンを開いて目でも確かめる',
   );
-  log_('S04', ENTRY.menu, 'list.inRange', String(inRange), 'D2 のプルダウンが参照する範囲=' + a1);
-  ss.toast('候補「' + name + '」を足した。D2 のプルダウンを開いて確かめる', 'T1-3', 8);
+  log_('S04', ENTRY.menu, 'list.inRange', inRange, 'F2 のプルダウンが参照する範囲=' + a1);
+  ss.toast('候補「' + name + '」を足した。F2 のプルダウンを開いて確かめる', 'T1-3', 8);
 }
 
 // ---------------------------------------------------------------- S06 セルの画像
@@ -371,7 +428,12 @@ function menuIcons() {
         .build();
       icons.getRange(row, 1).setValue(img);
       SpreadsheetApp.flush();
-      detail = '設定できた。画像が見えるかは目で確かめ、メニュー「控えを書く」の6〜8番に書く';
+      detail =
+        '設定できた。画像が見えるかは目で確かめ、メニュー「控えを書く」の' +
+        noteNumber_('user.icon.svg64') +
+        '〜' +
+        noteNumber_('user.icon.png') +
+        '番（SVG、SVG、PNG の順）に書く';
     } catch (err) {
       ok = false;
       detail = maskDigits_((err && err.message) || err).slice(0, 300);
