@@ -6,6 +6,7 @@
   },
   "include": [
     "test/**/*.ts",
+    "spikes/*/test/**/*.ts",
     "src/**/*.test.ts",
     "vite.config.ts",
     "vitest.config.ts",
