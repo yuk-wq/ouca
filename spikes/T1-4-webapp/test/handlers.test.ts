@@ -2,6 +2,7 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
 import { createWorld, plain, LOG, SUMMARY, type Opts } from './fakes';
+import { O, ORIGIN_LIST } from './design-table';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -14,16 +15,22 @@ function setup(opts: Opts = {}, prepared = true) {
   w.calls.length = 0;
   return { w, g, placeholder };
 }
-// ログの行を { scenario, origin, fact, value, detail } にする（列は日時、シナリオ、開き方、事実、値、詳細）
+// ログの行を { scenario, origin, fact, value, detail, build } にする
+// （列は日時、シナリオ、開き方、事実、値、詳細、ビルドの印）
 const rowsOf = (w: any) =>
   w.logRows().map((r: string[]) => ({
+    time: r[0],
     scenario: r[1],
     origin: r[2],
     fact: r[3],
     value: r[4],
     detail: r[5],
+    build: r[6],
   }));
 const byFact = (w: any, fact: string) => rowsOf(w).filter((r: any) => r.fact === fact);
+// ログに行を書く呼び出し（書けるかの確かめに使うログの H1 は除く）
+const isLogWrite = (c: string) =>
+  c === `appendRow:${LOG}` || (c.startsWith(`write:${LOG}!`) && c !== `write:${LOG}!H1`);
 
 describe('onOpen とメニュー', () => {
   it('準備、まとめを作る、区切りを書く の3つの項目を作る', () => {
@@ -46,7 +53,7 @@ describe('doGet', () => {
     const catalog = JSON.parse(json);
     // W1 の確かめ用に、置き換えで壊れやすい文字を含む値を入れておく
     const text = JSON.stringify(catalog);
-    for (const token of ['$&', '$1', '</script>', '\u2028']) expect(text, token).toContain(token);
+    for (const token of ['$&', '$1', '</script>', ' ']) expect(text, token).toContain(token);
   });
   it('埋め込む値は、置き換えの後も script が閉じない（</script> が1つだけ）', () => {
     const { w, g } = setup();
@@ -72,8 +79,7 @@ describe('doGet', () => {
   });
   it('addMetaTag が例外を出しても止まらず、使えなかったことを meta の行に書く', () => {
     const { w, g } = setup({ metaThrows: ['*'], metaMessage: 'attribute not allowed' });
-    const out = g.doGet({});
-    expect(out).toBeTruthy();
+    expect(g.doGet({})).toBeTruthy();
     const rows = byFact(w, 'meta').map((r: any) => JSON.parse(r.value));
     expect(rows.length).toBeGreaterThanOrEqual(4);
     for (const r of rows) {
@@ -94,11 +100,57 @@ describe('doGet', () => {
     expect(v.ok).toBe(false);
     expect(v.error).toContain('favicon rejected');
   });
-  it('exec の行に、URL の種類、実行する人が持ち主か、シートを読めたか、書けたかを書く', () => {
+  it('exec の行（開き方なし）に、getUrl() の種類、実行する人が持ち主か、シートを読めたか、書けたかを書く', () => {
     const { w, g } = setup();
     g.doGet({});
     const v = JSON.parse(byFact(w, 'exec')[0].value);
-    expect(v).toEqual({ kind: 'exec', effectiveIsOwner: true, read: true, wrote: true });
+    expect(v).toEqual({
+      via: 'none',
+      urlKind: 'exec',
+      effectiveIsOwner: true,
+      read: true,
+      wrote: true,
+    });
+    expect(byFact(w, 'exec')[0].origin).toBe('');
+  });
+  it('行をまとめて1回で書く（meta、favicon、exec、build の行が1回の書き込み）', () => {
+    const { w, g } = setup();
+    g.doGet({});
+    const names = plain(vm.runInContext('META_NAMES', g)) as string[];
+    expect(rowsOf(w).length).toBeGreaterThanOrEqual(names.length + 3);
+    expect(w.calls.filter(isLogWrite)).toHaveLength(1);
+  });
+  it('ログを書くときは、LockService で順番にする（ロックを取ってから書き、書いた後に放す）', () => {
+    const { w, g } = setup();
+    g.doGet({});
+    const wait = w.calls.indexOf('lock.wait');
+    const write = w.calls.findIndex(isLogWrite);
+    const release = w.calls.lastIndexOf('lock.release');
+    expect(wait).toBeGreaterThanOrEqual(0);
+    expect(write).toBeGreaterThan(wait);
+    expect(release).toBeGreaterThan(write);
+  });
+  it('ビルドの印（Page.html のハッシュ）を、画面に埋め、build の行と、書いた行すべての印の列に書く', () => {
+    const { w, g } = setup();
+    g.doGet({});
+    const catalog = JSON.parse(
+      (w.outputs[0].html as string).split('id="embed">')[1]!.split('</script>')[0]!,
+    );
+    expect(catalog.build).toMatch(/^[0-9a-f]{8}$/);
+    const buildRows = byFact(w, 'build');
+    expect(buildRows).toHaveLength(1);
+    expect(buildRows[0].value).toBe(catalog.build);
+    for (const r of rowsOf(w)) expect(r.build).toBe(catalog.build);
+  });
+  it('Page.html が違えばビルドの印も違い、同じなら同じ', () => {
+    const buildOf = (suffix: string) => {
+      const { w, g, placeholder } = setup();
+      w.opts.pageHtml = `<html>${suffix}<script type="application/json" id="embed">${placeholder}</script></html>`;
+      g.doGet({});
+      return byFact(w, 'build')[0].value;
+    };
+    expect(buildOf('A')).toBe(buildOf('A'));
+    expect(buildOf('A')).not.toBe(buildOf('B'));
   });
   it('getActiveSpreadsheet() が null でも、準備で保存した ID でログに書く', () => {
     const { w, g } = setup();
@@ -119,41 +171,82 @@ describe('doGet', () => {
     expect(all).not.toContain('owner.dummy@example.com');
     expect(all).not.toContain('AKfycbDUMMYDEPLOYMENTID');
   });
+  it('書いた行を summarize_ に渡すと、W5 の表になる', () => {
+    const { w, g } = setup({ metaThrows: ['theme-color'], metaMessage: 'nope' });
+    g.doGet({});
+    const out = plain(g.summarize_(rowsOf(w))) as any;
+    expect(out.W5.verdict).toBe('種類ごとの表');
+    const tc = out.W5.table.meta.find((m: any) => m.name === 'theme-color');
+    expect(tc).toMatchObject({ ok: false });
+    expect(tc.error).toContain('nope');
+  });
 });
 
 describe('recordFact（画面から呼ぶ）', () => {
+  // recordFact(scenario, origin, fact, value, detail, build)
   const call = (g: any, ...a: unknown[]) => g.recordFact(...a);
-  it('シナリオ、開き方、事実、値、詳細を、1行に書く', () => {
+  const good = ['W3', O.iphoneSafari, 'viewport', '{"innerWidth":390}', '{"ua":"x"}', 'b1'];
+
+  it('シナリオ、開き方、事実、値、詳細、ビルドの印を、1行に書く', () => {
     const { w, g } = setup();
-    call(g, 'W1', 'PC の Chrome', 'embed', '{"read":true}', 'メモ');
-    const r = rowsOf(w)[0];
-    expect(r).toMatchObject({
-      scenario: 'W1',
-      origin: 'PC の Chrome',
-      fact: 'embed',
-      value: '{"read":true}',
-      detail: 'メモ',
+    call(g, ...good);
+    expect(rowsOf(w)[0]).toMatchObject({
+      scenario: 'W3',
+      origin: O.iphoneSafari,
+      fact: 'viewport',
+      value: '{"innerWidth":390}',
+      detail: '{"ua":"x"}',
+      build: 'b1',
     });
   });
-  it.each([0, 1, 2, 3, 4])('%i 番目の引数が文字列でなければ断り、行を書かない', (i) => {
+  it('シナリオと開き方が空の行も書ける（開き方を選ぶ前の module、embed の行）', () => {
     const { w, g } = setup();
-    const args: unknown[] = ['W1', 'o', 'embed', 'v', 'd'];
+    call(g, '', '', 'module', '動いた', '', 'b1');
+    expect(rowsOf(w)).toHaveLength(1);
+  });
+  it.each([0, 1, 2, 3, 4, 5])('%i 番目の引数が文字列でなければ断り、行を書かない', (i) => {
+    const { w, g } = setup();
     for (const bad of [123, null, undefined, { a: 1 }, ['x']]) {
-      const a = [...args];
-      a[i] = bad;
+      const a = [...good];
+      a[i] = bad as any;
       expect(() => call(g, ...a)).toThrow();
     }
     expect(rowsOf(w)).toHaveLength(0);
+  });
+  it('決めた一覧にないシナリオは断る', () => {
+    const { w, g } = setup();
+    expect(() => call(g, 'W99', '', 'module', '動いた', '', 'b1')).toThrow();
+    expect(() => call(g, 'x'.repeat(300), '', 'module', '動いた', '', 'b1')).toThrow();
+    expect(rowsOf(w)).toHaveLength(0);
+  });
+  it('決めた一覧にない開き方は断る（一覧の9つと空は通る）', () => {
+    const { w, g } = setup();
+    expect(() => call(g, 'W3', 'どこか', 'viewport', '{}', '', 'b1')).toThrow();
+    for (const o of ORIGIN_LIST) call(g, 'W3', o, 'viewport', '{}', '', 'b1');
+    expect(rowsOf(w)).toHaveLength(ORIGIN_LIST.length);
+  });
+  it('決めた一覧にない事実は断る', () => {
+    const { w, g } = setup();
+    expect(() => call(g, 'W1', '', 'evil', 'x', '', 'b1')).toThrow();
+    expect(() => call(g, 'W1', '', 'user.admin', 'x', '', 'b1')).toThrow();
+    expect(rowsOf(w)).toHaveLength(0);
+  });
+  it('値と詳細は 1500 字で切る', () => {
+    const { w, g } = setup();
+    call(g, 'W5', O.iphoneSafari, 'user.homeicon', 'a'.repeat(2000), 'b'.repeat(2000), 'b1');
+    expect(rowsOf(w)[0].value).toHaveLength(1500);
+    expect(rowsOf(w)[0].detail).toHaveLength(1500);
   });
   it('メールアドレスと URL を伏せてから書く', () => {
     const { w, g } = setup();
     call(
       g,
-      'W6',
-      'o',
-      'exec',
+      'W5',
+      O.iphoneSafari,
+      'user.homeicon',
       'taro.dummy@example.com',
       'https://script.google.com/macros/s/AKfycbDUMMY123/exec',
+      'b1',
     );
     const r = rowsOf(w)[0];
     expect(r.value).toBe('ta***@example.com');
@@ -161,7 +254,7 @@ describe('recordFact（画面から呼ぶ）', () => {
   });
   it('= で始まる値も数式にならない（列を書式なしテキストにしてから書く）', () => {
     const { w, g } = setup();
-    call(g, 'W1', 'o', 'user.homeicon', '=HYPERLINK("http://x.example")', '+1');
+    call(g, 'W5', O.iphoneSafari, 'user.homeicon', '=HYPERLINK("http://x.example")', '+1', 'b1');
     expect(rowsOf(w)[0].value).toBe('=HYPERLINK("http://x.example")');
     expect(w.formulaCells).toEqual([]);
     const calls: string[] = w.calls;
@@ -169,43 +262,82 @@ describe('recordFact（画面から呼ぶ）', () => {
     expect(fmt).toBeGreaterThanOrEqual(0);
     expect(fmt).toBeLessThan(calls.indexOf(`appendRow:${LOG}`));
   });
+  it('書くときは、LockService で順番にする', () => {
+    const { w, g } = setup();
+    call(g, ...good);
+    const wait = w.calls.indexOf('lock.wait');
+    const write = w.calls.indexOf(`appendRow:${LOG}`);
+    const release = w.calls.lastIndexOf('lock.release');
+    expect(wait).toBeGreaterThanOrEqual(0);
+    expect(write).toBeGreaterThan(wait);
+    expect(release).toBeGreaterThan(write);
+  });
   it('getActiveSpreadsheet() が null でも、準備で保存した ID でログに書く', () => {
     const { w, g } = setup();
     w.setActiveNull(true);
-    call(g, 'W1', 'o', 'embed', 'v', 'd');
+    call(g, ...good);
     expect(rowsOf(w)).toHaveLength(1);
   });
   it('準備の前に getActiveSpreadsheet() が null なら、スプレッドシートを特定できず例外', () => {
     const { w, g } = setup({}, false);
     w.setActiveNull(true);
-    expect(() => call(g, 'W1', 'o', 'embed', 'v', 'd')).toThrow();
+    expect(() => call(g, ...good)).toThrow();
   });
 });
 
 describe('probeExec（画面から呼ぶ。W6）', () => {
+  // probeExec(origin, via, build)。via は画面が URL の引数から読んだ exec、dev、none
   it('開き方つきで exec の行を書き、同じ中身を返す', () => {
     const { w, g } = setup();
-    const ret = JSON.parse(g.probeExec('PC の Chrome'));
-    expect(ret).toEqual({ kind: 'exec', effectiveIsOwner: true, read: true, wrote: true });
+    const ret = JSON.parse(g.probeExec(O.pcB, 'exec', 'b1'));
+    expect(ret).toEqual({
+      via: 'exec',
+      urlKind: 'exec',
+      effectiveIsOwner: true,
+      read: true,
+      wrote: true,
+    });
     const r = byFact(w, 'exec')[0];
-    expect(r.origin).toBe('PC の Chrome');
+    expect(r.origin).toBe(O.pcB);
+    expect(r.build).toBe('b1');
     expect(JSON.parse(r.value)).toEqual(ret);
   });
   it('実行する人が持ち主でなければ effectiveIsOwner は false（メールアドレスは書かない）', () => {
     const { w, g } = setup({ effective: 'someone.else@example.com' });
-    const ret = JSON.parse(g.probeExec('PC の Chrome'));
+    const ret = JSON.parse(g.probeExec(O.pcB, 'exec', 'b1'));
     expect(ret.effectiveIsOwner).toBe(false);
     expect(JSON.stringify(w.logRows())).not.toContain('someone.else@');
   });
-  it('/dev の URL なら kind は dev', () => {
+  it('via と getUrl() の種類は、別々に書く（/dev の URL でも via が exec なら、via は exec）', () => {
     const { g } = setup({
       url: 'https://script.google.com/macros/s/AKfycbDUMMYDEPLOYMENTID1234567890abcdef/dev',
     });
-    expect(JSON.parse(g.probeExec('PC の Chrome')).kind).toBe('dev');
+    const ret = JSON.parse(g.probeExec(O.pcA, 'exec', 'b1'));
+    expect(ret.via).toBe('exec');
+    expect(ret.urlKind).toBe('dev');
   });
-  it('開き方が文字列でなければ断る', () => {
+  it.each(['exec', 'dev', 'none'])('via が %s なら通る', (via) => {
     const { g } = setup();
-    expect(() => g.probeExec(5)).toThrow();
+    expect(JSON.parse(g.probeExec(O.pcA, via, 'b1')).via).toBe(via);
+  });
+  it('via が決めた値でなければ断る', () => {
+    const { w, g } = setup();
+    expect(() => g.probeExec(O.pcA, 'prod', 'b1')).toThrow();
+    expect(byFact(w, 'exec')).toHaveLength(0);
+  });
+  it('開き方が一覧にないか、文字列でなければ断る', () => {
+    const { g } = setup();
+    expect(() => g.probeExec('どこか', 'exec', 'b1')).toThrow();
+    expect(() => g.probeExec(5, 'exec', 'b1')).toThrow();
+    expect(() => g.probeExec(O.pcA, 'exec', 5)).toThrow();
+  });
+  it('書いた行を summarize_ に渡すと、/exec の行が W6「成り立つ」、持ち主でなければ「成り立たない」', () => {
+    const ok = setup();
+    ok.g.probeExec(O.pcB, 'exec', 'b1');
+    expect((plain(ok.g.summarize_(rowsOf(ok.w))) as any).W6.verdict).toBe('成り立つ');
+    const ng = setup({ effective: 'someone.else@example.com' });
+    ng.g.probeExec(O.pcB, 'exec', 'b1');
+    expect((plain(ng.g.summarize_(rowsOf(ng.w))) as any).W6.verdict).toBe('成り立たない');
   });
 });
 
@@ -226,7 +358,7 @@ describe('getPayload（往復の時間を測るための JSON）', () => {
 describe('menuSummarize', () => {
   it('ログの行から、まとめのタブに判定を書く', () => {
     const { w, g } = setup();
-    g.recordFact('W1', '', 'embed', '{"read":true,"same":true}', '');
+    g.recordFact('W1', '', 'embed', '{"read":true,"same":true}', '', 'b1');
     g.menuSummarize();
     const sh = w.sheetOf(SUMMARY);
     expect(sh).toBeTruthy();
@@ -234,5 +366,22 @@ describe('menuSummarize', () => {
     expect(text).toContain('W1');
     expect(text).toContain('読める');
     expect(w.formulaCells).toEqual([]);
+  });
+  it('最新のビルドの印（doGet が書いた build の行）の行だけを使う。古い行は使わない', () => {
+    const { w, g, placeholder } = setup();
+    const doGetWith = (tag: string) => {
+      w.opts.pageHtml = `<html>${tag}<script type="application/json" id="embed">${placeholder}</script></html>`;
+      g.doGet({});
+      const builds = byFact(w, 'build');
+      return builds[builds.length - 1].value as string;
+    };
+    const oldBuild = doGetWith('old');
+    g.recordFact('W1', '', 'embed', '{"read":true,"same":false}', '', oldBuild);
+    const newBuild = doGetWith('new');
+    g.recordFact('W1', '', 'embed', '{"read":true,"same":true}', '', newBuild);
+    g.menuSummarize();
+    const sh = w.sheetOf(SUMMARY);
+    const rows = sh.getRange(1, 1, sh.getLastRow(), 6).getValues() as string[][];
+    expect(rows.find((r) => r[0] === 'W1')![2]).toBe('読める');
   });
 });

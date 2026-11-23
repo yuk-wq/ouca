@@ -102,12 +102,12 @@ export function createWorld(opts: Opts = {}) {
       },
       getValue: () => sheet.valueAt(row, col),
       setValues: (vs: any[][]) => {
-        calls.push(`write:${sheet.name}`);
+        calls.push(`write:${sheet.name}!${a1}`);
         vs.forEach((line, i) => line.forEach((v, j) => write(row + i, col + j, v)));
         return r;
       },
       setValue: (v: any) => {
-        calls.push(`write:${sheet.name}`);
+        calls.push(`write:${sheet.name}!${a1}`);
         write(row, col, v);
         return r;
       },
@@ -254,7 +254,20 @@ export function createWorld(opts: Opts = {}) {
     },
   };
 
+  // 書き込みの順番を確かめるための、ロックの偽物
+  const LockService = {
+    getScriptLock: () => ({
+      waitLock: () => {
+        calls.push('lock.wait');
+      },
+      releaseLock: () => {
+        calls.push('lock.release');
+      },
+    }),
+  };
+
   const injected: Record<string, any> = {
+    LockService,
     SpreadsheetApp,
     Session,
     ScriptApp,
@@ -274,13 +287,13 @@ export function createWorld(opts: Opts = {}) {
     return ctx;
   }
 
-  // ログのタブの行（見出しを除く）を、6列の文字列の配列にする
+  // ログのタブの行（見出しを除く）を、7列（日時、シナリオ、開き方、事実、値、詳細、ビルドの印）の文字列の配列にする
   function logRows(): string[][] {
     const sh = sheets.get(LOG);
     if (!sh) return [];
     const out: string[][] = [];
     for (let r = 2; r <= sh.getLastRow(); r++) {
-      out.push([1, 2, 3, 4, 5, 6].map((c) => String(sh.valueAt(r, c))));
+      out.push([1, 2, 3, 4, 5, 6, 7].map((c) => String(sh.valueAt(r, c))));
     }
     return out;
   }
