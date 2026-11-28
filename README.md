@@ -29,8 +29,9 @@ OUCA/
 ## 文書
 
 新設計（`docs/to-be/`）
-- `work-plan.md`: ワークプラン。フェーズ、タスクと担当（Opus / Sonnet）と Issue の対応、依頼文の型、ユーザーに決めてもらうこと。タスクの中身と状態は GitHub の Issue で管理する。作業はここから始める
+- `work-plan.md`: ワークプラン。フェーズ、タスクと担当（Opus / Sonnet）と Issue の対応、依頼文の型、Yu と Oka に決めてもらうこと。タスクの中身と状態は GitHub の Issue で管理する。作業はここから始める
 - `design.md`: 設計書。シート、API、画面、お気に入りと好みの分析、アイコン
+- `admin-requirements.md`: 管理画面（Web ページ）の要件定義。決まった内容は `design.md` に書き戻してある
 - `delivery-flow.md`: 実装、Oka への受け渡し（テンプレートのコピー、リリースの取り込み）、更新とメニューの公開の流れ。Yu は本番のデータに触れない
 - `spikes.md`: 技術検証（フェーズ1）の結果。確認したこと、結果、設計への影響
 - `glossary.md`: 用語集。各文書の冒頭の「用語」の表の説明の元
