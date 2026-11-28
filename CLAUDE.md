@@ -6,6 +6,7 @@
 
 - `docs/to-be/design.md`: 設計の正本。変えるのはメインのセッションだけ
 - `docs/to-be/delivery-flow.md`: 受け渡し、更新、テスト環境の流れ
+- `docs/to-be/admin-requirements.md`: 管理画面（Web ページ）の要件定義。決まった内容は design.md に書き戻す
 - `docs/to-be/work-plan.md`: ワークプラン（フェーズ、タスクと担当と Issue の対応、依頼文の型、ユーザーに決めてもらうこと）。タスクの中身と状態は GitHub の Issue で管理する
 - `docs/to-be/spec/`: 実装できる粒度の仕様（フェーズ2 で作る）
 - `docs/as-is/`: 作り直す前のサイトの解析。読むだけで更新しない
