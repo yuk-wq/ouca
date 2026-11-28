@@ -5,20 +5,22 @@ import { copyFileSync } from 'node:fs';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { GAS_GLOBAL_FUNCTIONS } from './gas-globals.mjs';
+import { GAS_ENTRIES } from './gas-globals.mjs';
+import { checkEntries, makeEntryFooter } from './gas-entries.mjs';
 
 process.env.NODE_ENV = 'production';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const dist = resolve(root, 'dist');
 const { version } = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
 
+// 0. 入口の一覧の決まりを確かめる
+checkEntries(GAS_ENTRIES);
+
 // 1. 画面。emptyOutDir で dist/ を空にするので、必ず最初に動かす
 await viteBuild({ configFile: resolve(root, 'vite.config.ts'), logLevel: 'warn' });
 
 // 2. サーバー。IIFE の中の関数は GAS から見えないので、入口の関数をトップレベルに生成する
-const footer = GAS_GLOBAL_FUNCTIONS.map(
-  (name) => `function ${name}() { return OUCA_.${name}.apply(null, arguments); }`,
-).join('\n');
+const footer = makeEntryFooter(GAS_ENTRIES);
 
 await esbuild({
   entryPoints: [resolve(root, 'src/server/main.ts')],
