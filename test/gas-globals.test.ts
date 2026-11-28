@@ -23,6 +23,10 @@ describe('dist/Code.js のトップレベル', () => {
     expect([...names].sort()).toEqual([...EXPECTED_GLOBAL_FUNCTIONS].sort());
   });
 
+  it('OUCA_ は関数でなく、オブジェクトである（google.script.run とトリガーから呼べない）', () => {
+    expect(vm.runInContext('typeof OUCA_', context)).toBe('object');
+  });
+
   it('それらはすべて関数である（変数を外に出していない）', () => {
     for (const name of names) {
       expect(typeof (context as Record<string, unknown>)[name], name).toBe('function');

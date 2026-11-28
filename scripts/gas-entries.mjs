@@ -3,7 +3,7 @@
 const KINDS = {
   webapp: { underscore: false, names: ['doGet'] },
   api: { underscore: false },
-  admin: { underscore: false },
+  admin: { underscore: false, names: ['adminCall'] },
   simpleTrigger: { underscore: false, names: ['onOpen', 'onEdit'] },
   ownerButton: { underscore: false },
   ownerMenu: { underscore: true },
@@ -15,6 +15,10 @@ export function checkEntries(list) {
   for (const { name, kind } of list) {
     const rule = Object.hasOwn(KINDS, kind) ? KINDS[kind] : undefined;
     if (!rule) throw new Error(`知らない種類: ${name} (${kind})`);
+    if (!/^[A-Za-z_$][\w$]*$/.test(name)) {
+      throw new Error(`名前が JavaScript の識別子の形でない: ${name}`);
+    }
+    if (name === 'OUCA_') throw new Error('OUCA_ は esbuild の包みの名前なので、入口にできない');
     if (seen.has(name)) throw new Error(`名前が重複している: ${name}`);
     seen.add(name);
     if (name.endsWith('_') !== rule.underscore) {

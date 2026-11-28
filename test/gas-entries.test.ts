@@ -29,26 +29,40 @@ describe('checkEntries', () => {
     expect(() => checkEntries([])).not.toThrow();
   });
 
-  const bad: [string, Entry[]][] = [
-    ['api に _ を付けた', [{ name: 'getCatalog_', kind: 'api' }]],
-    ['admin に _ を付けた', [{ name: 'adminCall_', kind: 'admin' }]],
-    ['ownerButton に _ を付けた', [{ name: 'doIt_', kind: 'ownerButton' }]],
-    ['ownerMenu に _ がない', [{ name: 'menuAction', kind: 'ownerMenu' }]],
-    ['installedTrigger に _ がない', [{ name: 'onEditInstalled', kind: 'installedTrigger' }]],
-    ['知らない種類', [{ name: 'foo', kind: 'unknown' }]],
+  const bad: [string, Entry[], RegExp][] = [
+    ['api に _ を付けた', [{ name: 'getCatalog_', kind: 'api' }], /末尾 _ を付けない/],
+    ['admin に _ を付けた', [{ name: 'adminCall_', kind: 'admin' }], /末尾 _ を付けない/],
+    ['ownerButton に _ を付けた', [{ name: 'doIt_', kind: 'ownerButton' }], /末尾 _ を付けない/],
+    ['ownerMenu に _ がない', [{ name: 'menuAction', kind: 'ownerMenu' }], /末尾 _ を付ける/],
+    [
+      'installedTrigger に _ がない',
+      [{ name: 'onEditInstalled', kind: 'installedTrigger' }],
+      /末尾 _ を付ける/,
+    ],
+    ['知らない種類', [{ name: 'foo', kind: 'unknown' }], /知らない種類/],
+    ['種類が Object のプロパティ名', [{ name: 'foo', kind: 'toString' }], /知らない種類/],
     [
       '名前の重複',
       [
         { name: 'getCatalog', kind: 'api' },
-        { name: 'getCatalog', kind: 'admin' },
+        { name: 'getCatalog', kind: 'api' },
       ],
+      /重複/,
     ],
-    ['simpleTrigger が onOpen と onEdit 以外', [{ name: 'onChange', kind: 'simpleTrigger' }]],
-    ['webapp が doGet 以外', [{ name: 'doPost', kind: 'webapp' }]],
+    [
+      'simpleTrigger が onOpen と onEdit 以外',
+      [{ name: 'onChange', kind: 'simpleTrigger' }],
+      /onOpen、onEdit に限る/,
+    ],
+    ['webapp が doGet 以外', [{ name: 'doPost', kind: 'webapp' }], /doGet に限る/],
+    ['admin が adminCall 以外', [{ name: 'adminOther', kind: 'admin' }], /adminCall に限る/],
+    ['名前が識別子の形でない', [{ name: 'get-catalog', kind: 'api' }], /識別子/],
+    ['名前が数字で始まる', [{ name: '1abc', kind: 'api' }], /識別子/],
+    ['名前が OUCA_', [{ name: 'OUCA_', kind: 'ownerMenu' }], /OUCA_/],
   ];
-  for (const [title, list] of bad) {
-    it(`合わない一覧は例外になる: ${title}`, () => {
-      expect(() => checkEntries(list)).toThrow();
+  for (const [title, list, message] of bad) {
+    it(`合わない一覧は、どの決まりに反したかが分かる例外になる: ${title}`, () => {
+      expect(() => checkEntries(list)).toThrow(message);
     });
   }
 });
