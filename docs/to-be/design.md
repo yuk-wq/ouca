@@ -550,7 +550,8 @@ flowchart TB
 - 段階の部品は、段階の数（3〜10）が変わっても崩れないように作る
 - 上限は押した後に知らせるのではなく、押す前に選べない量を無効にして理由を出す
 - 合計バーには、料金のかかる受け取り方法のとき「送料込みの100gあたり約¥N」も出す（渡された HTML（`docs/as-is/site-analysis.md` §5）の機能を引き継ぐ）
-- localStorage は補助の扱いにする。googleusercontent の iframe は iOS Safari や LINE 内ブラウザで保存が分離・削除されるので、try/catch で囲み、失敗しても動くようにする
+- localStorage は補助の扱いにする。iPhone の LINE の中のブラウザでは、開き直すと消え、ホーム画面に追加したアイコンから開いても、開き直すと消えた（T1-4）。iPhone の Safari は再読み込みで残った。PC はシークレットウィンドウの同じセッションの中で、再読み込みと新しいタブで残った。閉じてから開き直した場合は確かめていない。読むときは、`window.localStorage` のプロパティを読む処理も含めて try/catch で囲み、失敗しても動くようにする（サードパーティの保存を止めたブラウザでは、プロパティを読むだけで例外になり得る）
+- 長い文字列（名前、備考、説明）は折り返し（例 `overflow-wrap: anywhere`）、部品の幅を画面の幅に収め、横に動かせる画面にしない（T1-4 の調べる画面で、長い文字列がはみ出して横に動いた）
 - シートの値は HTML として扱わない。Preact の既定のエスケープに任せ、`dangerouslySetInnerHTML` は使わない。案内文の改行は CSS の `white-space: pre-line` で出す
 - 外部へのリンクは iframe の中で開かないよう `target="_top"` にする
 
@@ -569,7 +570,7 @@ flowchart TB
 - Vite の出力を `createTemplateFromFile` に渡すと、バンドルの中の `<?` が GAS の HTML テンプレートの書き方として解釈され、HTML がおかしくなる可能性があるので使わない
 - `HtmlService.createHtmlOutput(html.replace(PLACEHOLDER, () => json))` のように置換は関数で渡す（置換文字列の `$&` などを解釈させない）。`PLACEHOLDER` は、HTML の中でメニューの JSON を入れる位置に置いた目印の文字列
 - JSON は `<` を `\u003c` に置き換え、`<script type="application/json">` に入れる
-- `setTitle`、`addMetaTag('viewport', …)`、`setFaviconUrl` を doGet で付ける
+- `setTitle`、`addMetaTag('viewport', …)`、`setFaviconUrl` を doGet で付ける。viewport は効き、iPhone で画面の幅が端末の幅と同じになった。HTML の中に書いた viewport の meta は効かない（T1-4）。`addMetaTag` に渡せたのは `viewport`、`apple-mobile-web-app-capable`、`mobile-web-app-capable` の3つで、`apple-mobile-web-app-title`、`apple-mobile-web-app-status-bar-style`、`theme-color`、`description` は「指定したメタタグはこのコンテキストでは使用できません。」で断られた（T1-4）
 - 画像を base64 でバンドルに埋め込まない（HTML が重くなる）
 
 ### 4.3 アイコン
@@ -624,7 +625,7 @@ flowchart LR
 
 GAS で決められないこと
 - ファビコンは `setFaviconUrl` に、誰でも開ける場所に置いた PNG の URL を渡す。置き場所（GitHub など）が別に要る
-- ホーム画面に追加したときのアイコン（apple-touch-icon）は、外枠のページに `<link>` を足せないので付けられない見込み（§11 で確認）
+- ホーム画面に追加したときのアイコン（apple-touch-icon）は付けられない。iPhone でホーム画面に追加すると、アイコンは文字（「T」）になった（T1-4）。ホーム画面のアイコンから開くと保存も消える（§5.1）ので、お客さんにホーム画面への追加は勧めない
 
 ### 4.4 技術の選択とビルド
 
@@ -684,8 +685,8 @@ flowchart LR
 - 注文のときは、ハートの一覧を自動で一緒に送る。お客さん向けの表示や切り替えは出さない
 - 制約
   - 端末とブラウザごとの保存なので、別の端末とは共有されない
-  - iframe の中の保存なので、iOS Safari や LINE 内ブラウザでは消えることがある。消えても注文には影響しない
-  - Web アプリの URL が変わると、保存先が変わってハートは消える可能性がある
+  - iframe の中の保存なので、ブラウザによっては消える。iPhone の LINE の中のブラウザと、ホーム画面に追加したアイコンから開いたときは、開き直すと消えた（T1-4）。消えても注文には影響しない。お客さんは LINE のリンクから開くことが多いので、LINE の外のブラウザで開くようにする案（LINE の URL の引数 `openExternalBrowser=1`）を T5-3（通しの確認）で確かめる
+  - 同じスクリプトの `/exec` と `/dev` では、iframe の保存先（オリジン）が同じだった（T1-4）。別のスクリプト（テンプレートのコピーなど）では保存先が変わる見込み
 - 注文を伴わない閲覧やハートの操作は送らない。お店に届くのは注文のときのハートだけにする
 
 ### 5.2 ダッシュボード（シート）
@@ -729,7 +730,7 @@ flowchart LR
 
 画面（お客さんの手間は増やさない）
 - 名前欄に、前回この端末で入力した名前を自動で入れる。同じ人が同じ表記で注文しやすくなる
-- 端末ごとに匿名の ID（端末ID）を作って localStorage に保存し、注文と一緒に送る
+- 端末ごとに匿名の ID（端末ID）を作って localStorage に保存し、注文と一緒に送る。LINE の中のブラウザでは開き直すと消える（T1-4）ので、LINE から開くお客さんでは、前回の名前の自動入力と端末ID は働かないことが多い
 
 シート「お客さん」タブ（オーナーが確かめる）
 
@@ -836,9 +837,7 @@ flowchart LR
 ## 11. 実装時に確かめること
 
 - シートの機能（T1-3）は確かめ終えた。結果は `docs/to-be/spikes.md` の T1-3 にある（§2.0、§2.14、§3.3）。複数選択のプルダウンはスクリプトで一から作れず、手でオンにしたセルのコピーと `getDataValidation().copy().build()` で残る。`copy()` の後に範囲を変えても残るかは、T4-5（項目を追加）で確かめる
-- エディタから試すときの Web アプリの URL（末尾が `/dev`）で誰の権限で動くかと、テスト用スプレッドシートでの動作
-- googleusercontent の iframe の保存先が、再読み込みや、ブラウザを変えたときに残るか（お気に入り、前回の名前、端末ID が消えないか）。読み込み方式ではデプロイを更新しないので、更新で保存先が変わることはない見込み
-- ホーム画面に追加したときのアイコンを付ける方法がないか（`addMetaTag` で使える meta の種類）
+- Web アプリの動作（T1-4）は確かめ終えた。結果は `docs/to-be/spikes.md` の T1-4 にある（§4、§4.1、§4.2、§4.3、§5.1）
 - テンプレートのコピーでの受け渡し（T1-2）は確かめ終えた。結果は `docs/to-be/spikes.md` の T1-2 と `docs/to-be/delivery-flow.md` §8 にある
 - アプリの自己更新（T1-1）は確かめ終え、読み込み方式に決めた。結果は `docs/to-be/spikes.md` の T1-1 にある（§1、§4.4）。次の3つは後のタスクで確かめる
   - 本番に近い大きさのバンドルでの読み込みの時間（フェーズ4）
