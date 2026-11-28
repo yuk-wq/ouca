@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <base target="_top" />
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: sans-serif;
+        margin: 12px;
+        line-height: 1.5;
+      }
+      button {
+        font-size: 16px;
+        padding: 10px 14px;
+        margin: 4px 0;
+        display: block;
+      }
+      pre {
+        background: #f3f3f3;
+        padding: 8px;
+        white-space: pre-wrap;
+        word-break: break-all;
+      }
+      input[type='text'] {
+        font-size: 16px;
+        width: 90%;
+      }
+      h2 {
+        font-size: 16px;
+        margin: 16px 0 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>T1-3 管理ページの検証</h1>
+
+    <h2>1. doGet が受け取った情報</h2>
+    <pre id="info">（読み込み中）</pre>
+
+    <h2>2. どこから開いたか</h2>
+    <select id="origin">
+      <option value="">（選んでください）</option>
+      <option value="A の PC">A の PC</option>
+      <option value="B の PC">B の PC</option>
+      <option value="シークレット">シークレット</option>
+      <option value="A のスマホの Safari">A のスマホの Safari</option>
+      <option value="A のスマホの Chrome">A のスマホの Chrome</option>
+    </select>
+
+    <h2>3. 持ち主の確かめ</h2>
+    <button type="button" id="check">持ち主の確かめ（止めない版）を呼ぶ</button>
+    <button type="button" id="guard">持ち主の確かめ（止める版）を呼ぶ</button>
+
+    <h2>4. 偽のイベントを onEdit に送る</h2>
+    <button type="button" id="fake">値だけのオブジェクトを送る</button>
+    <form id="f" onsubmit="return false;">
+      <input type="text" name="t" value="dummy" />
+      <input type="file" name="file" />
+      <button type="button" id="sendForm">form（file 入力つき）を送る</button>
+    </form>
+
+    <h2>4b. e.source と e.range に別の値を入れた form を送る</h2>
+    <form id="g" onsubmit="return false;">
+      <input type="text" name="value" value="dummy" />
+      <input type="file" name="source" />
+      <input type="file" name="range" />
+      <button type="button" id="sendForm2">form（source と range に file 入力）を送る</button>
+    </form>
+
+    <h2>5. 結果</h2>
+    <pre id="result">（まだ何も呼んでいない）</pre>
+
+    <script>
+      // サーバーが埋めた値。画面には textContent で出す（HTML として描画しない）
+      const SERVER_INFO = <?!= infoJson ?>;
+      const lines = Object.keys(SERVER_INFO).map(function (k) {
+        return k + ' = ' + JSON.stringify(SERVER_INFO[k]);
+      });
+      document.getElementById('info').textContent = lines.join('\n');
+
+      const result = document.getElementById('result');
+      function show(label, text) {
+        result.textContent = new Date().toLocaleTimeString() + ' ' + label + '\n' + text;
+      }
+      function origin() {
+        return document.getElementById('origin').value;
+      }
+      // 開いたデプロイの印（doGet が埋めた d）を、呼ぶときに送り返す
+      function call(label, name, ...args) {
+        show(label, '（呼び出し中）');
+        google.script.run
+          .withSuccessHandler(function (r) {
+            show(label + ' 成功', String(r));
+          })
+          .withFailureHandler(function (err) {
+            show(label + ' 失敗', String((err && err.message) || err));
+          })
+          [name](...args);
+      }
+
+      // form を送る。送れなかったときは、誤りの文言を webFakeError で記録する（まとめの「form を送れない」の根拠）
+      function callForm(label, kind, form) {
+        show(label, '（呼び出し中）');
+        function failed(err) {
+          const msg = String((err && err.message) || err);
+          show(label + ' 失敗', msg);
+          google.script.run.webFakeError(kind, msg);
+        }
+        try {
+          google.script.run
+            .withSuccessHandler(function (r) {
+              show(label + ' 成功', String(r));
+            })
+            .withFailureHandler(failed)
+            .onEdit(form);
+        } catch (err) {
+          failed(err);
+        }
+      }
+
+      document.getElementById('check').addEventListener('click', function () {
+        call('webOwnerCheck', 'webOwnerCheck', origin(), SERVER_INFO.d);
+      });
+      document.getElementById('guard').addEventListener('click', function () {
+        call('webOwnerGuard', 'webOwnerGuard', origin(), SERVER_INFO.d);
+      });
+      document.getElementById('fake').addEventListener('click', function () {
+        call('onEdit（値だけのオブジェクト）', 'onEdit', {
+          value: 'dummy',
+          oldValue: 'old',
+          range: { row: 2, column: 1 },
+          source: { id: 'fake-spreadsheet-id' },
+          triggerUid: 'fake-uid',
+        });
+      });
+      document.getElementById('sendForm2').addEventListener('click', function () {
+        callForm('onEdit（source と range が file の form）', 'form2', document.getElementById('g'));
+      });
+      document.getElementById('sendForm').addEventListener('click', function () {
+        callForm('onEdit（form）', 'form1', document.getElementById('f'));
+      });
+    </script>
+  </body>
+</html>
