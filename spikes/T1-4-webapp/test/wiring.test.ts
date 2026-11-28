@@ -140,3 +140,14 @@ describe('make-page.mjs で作った Page.html', () => {
     expect(html).toMatch(/<script(?![^>]*\btype=)[^>]*>/);
   });
 });
+
+describe('GAS に送るファイルの文字', () => {
+  // GAS は送るときに構文を確かめ、文字列の中の U+2028、U+2029 をそのまま書くと
+  // 「Unexpected token ILLEGAL」で送れない（2026-11-28 の push で確かめた）。エスケープで書く
+  it('gas/ の .js と .html に、U+2028 と U+2029 をそのまま書いていない', () => {
+    for (const f of readdirSync(resolve(ROOT, 'gas')).filter((n) => /\.(js|html)$/.test(n))) {
+      const text = read(`gas/${f}`);
+      expect(text.includes(' ') || text.includes(' '), f).toBe(false);
+    }
+  });
+});

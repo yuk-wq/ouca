@@ -11,7 +11,7 @@ const PAYLOAD_KB = [5, 50, 200];
 const TITLE = 'T1-4 調べる画面';
 const FAVICON_URL = 'https://www.gstatic.com/images/branding/product/1x/apps_script_48dp.png';
 // W1 の確かめ用。置き換えとエスケープで壊れやすい文字を含める。調べる画面（page/probe.ts）も同じ値を持つ
-const EMBED_SAMPLE = '$& $1 $$ </script><!--     日本語';
+const EMBED_SAMPLE = '$& $1 $$ </script><!-- \u2028 \u2029 日本語';
 // addMetaTag に渡す内容（名前ごと）
 const META_CONTENT = {
   viewport: 'width=device-width, initial-scale=1',

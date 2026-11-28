@@ -1,7 +1,7 @@
 // 調べる画面の純粋な関数。DOM や GAS は呼ばない（受け取った値だけで決まる）。DESIGN.md §4。
 
 // W1 の確かめ用の値。gas/Code.js の EMBED_SAMPLE と同じ
-export const EMBED_SAMPLE = '$& $1 $$ </script><!--     日本語';
+export const EMBED_SAMPLE = '$& $1 $$ </script><!-- \u2028 \u2029 日本語';
 
 // 「どこから開いたか」の選択肢。DESIGN.md §2 の一覧と同じ（gas/Logic.js の ORIGINS とも同じ）
 export const ORIGIN_CHOICES = [
