@@ -5,9 +5,10 @@
 ## 文書の地図
 
 - `docs/to-be/design.md`: 設計の正本。変えるのはメインのセッションだけ
+- `docs/to-be/glossary.md`: 用語集。言葉の説明の元。各文書と実行役はこれに従う
 - `docs/to-be/delivery-flow.md`: 受け渡し、更新、テスト環境の流れ
 - `docs/to-be/admin-requirements.md`: 管理画面（Web ページ）の要件定義。決まった内容は design.md に書き戻す
-- `docs/to-be/work-plan.md`: ワークプラン（フェーズ、タスクと担当と Issue の対応、依頼文の型、Yu に決めてもらうこと）。タスクの中身と状態は GitHub の Issue で管理する
+- `docs/to-be/work-plan.md`: ワークプラン（フェーズ、タスクと担当と Issue の対応、依頼文の型、Yu と Oka に決めてもらうこと）。タスクの中身と状態は GitHub の Issue で管理する
 - `docs/to-be/spec/`: 実装できる粒度の仕様（フェーズ2 で作る）
 - `docs/as-is/`: 作り直す前のサイトの解析。読むだけで更新しない
 - `_work/`: 解析の証拠とレビューの記録。読むだけ
@@ -53,7 +54,7 @@
 作業は GitHub（`yuk-wq/ouca`）の Issue から始め、プルリクエスト（PR）で閉じる。
 
 - Issue
-  - ワークプランのタスク（T0-1〜T8-2）と、Yu に決めてもらうこと（D-1〜D-6）は Issue にしてある。フェーズはマイルストーンで分ける
+  - ワークプランのタスク（T0-1〜T8-2）と、Yu と Oka に決めてもらうこと（D-1〜D-6）は Issue にしてある。フェーズはマイルストーンで分ける
   - タスクの中身と状態は Issue で管理する（開いている、閉じた、担当、コメント）。`docs/to-be/work-plan.md` には状態を書かない
   - 新しい作業が出たら、先に Issue を立ててから始める。テンプレートは `.github/ISSUE_TEMPLATE/`
   - タスクの Issue には、次の3つを書く
